@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { requireAuth } from '../middleware/auth.js';
 import {
   listProjects, getProject, createProject, deleteProject,
-  updateCheckpoint, startProjectWorkflow, streamEvents,
+  updateCheckpoint, startProjectWorkflow, getEnvironment, getBlueprint, getTemplate, streamEvents,
 } from '../controllers/project.js';
 import { uploadPastPapers, handleUpload, getFile, downloadFile } from '../controllers/upload.js';
 
@@ -10,6 +10,9 @@ const router = Router();
 
 // All routes require auth
 router.use(requireAuth);
+
+// Environment detection (no project needed)
+router.get('/env', getEnvironment);
 
 // Project CRUD
 router.get('/', listProjects);
@@ -24,6 +27,12 @@ router.post('/:id/start', startProjectWorkflow);
 router.post('/:id/upload', uploadPastPapers, handleUpload);
 router.get('/:id/files/:fileId', getFile);
 router.get('/:id/download/:fileId', downloadFile);
+
+// Blueprint data
+router.get('/:id/blueprint', getBlueprint);
+
+// Template data
+router.get('/:id/template', getTemplate);
 
 // Checkpoints
 router.post('/:id/checkpoints/:step', updateCheckpoint);

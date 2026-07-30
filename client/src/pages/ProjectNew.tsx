@@ -1,22 +1,40 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Card, Form, Input, InputNumber, Select, Slider, Button, Typography,
-  Upload, message, Divider, Space,
+  Card, Form, Input, InputNumber, Select, Button, Typography,
+  Upload, message, Divider, Space, Tag, Alert, Spin,
 } from 'antd';
-import { InboxOutlined, ArrowLeftOutlined } from '@ant-design/icons';
-import { createProject, uploadPapers } from '../services/project';
+import { InboxOutlined, ArrowLeftOutlined, CheckCircleOutlined, WarningOutlined } from '@ant-design/icons';
+import { createProject, uploadPapers, getEnvironment } from '../services/project';
 import type { CreateProjectRequest } from '@exam-maker/shared';
 
 const { Title, Text } = Typography;
 const { Dragger } = Upload;
 const { TextArea } = Input;
 
+interface EnvInfo {
+  pandoc: { available: boolean; version: string | null };
+  soffice: { available: boolean };
+  python: { available: boolean; hasSympy: boolean; hasNumpy: boolean };
+  latex: { available: boolean; engine: string | null };
+  ai: { available: boolean; provider: string; model: string };
+}
+
 const ProjectNew: React.FC = () => {
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
   const [fileList, setFileList] = useState<File[]>([]);
+  const [env, setEnv] = useState<EnvInfo | null>(null);
+  const [envLoading, setEnvLoading] = useState(true);
   const navigate = useNavigate();
+
+  useEffect(() => {
+    getEnvironment().then(data => {
+      setEnv(data.env as unknown as EnvInfo);
+    }).catch(() => {
+      // silently fail, env detection is optional
+    }).finally(() => setEnvLoading(false));
+  }, []);
 
   const onFinish = async (values: Record<string, unknown>) => {
     setLoading(true);
@@ -123,7 +141,49 @@ const ProjectNew: React.FC = () => {
             </Form.Item>
           </div>
 
+          <Divider>运行环境</Divider>
+          {envLoading ? (
+            <div style={{ textAlign: 'center', padding: 16 }}><Spin size="small" /> 检测中...</div>
+          ) : env ? (
+            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
+              <Tag icon={env.pandoc.available ? <CheckCircleOutlined /> : <WarningOutlined />}
+                color={env.pandoc.available ? 'success' : 'warning'}>
+                pandoc{env.pandoc.available ? ' ✅' : ' 未安装'}
+              </Tag>
+              <Tag icon={env.soffice.available ? <CheckCircleOutlined /> : <WarningOutlined />}
+                color={env.soffice.available ? 'success' : 'default'}>
+                LibreOffice{env.soffice.available ? ' ✅' : ' 未安装'}
+              </Tag>
+              <Tag icon={env.python.available ? <CheckCircleOutlined /> : <WarningOutlined />}
+                color={env.python.available ? (env.python.hasSympy ? 'success' : 'warning') : 'default'}>
+                Python{env.python.hasSympy ? ' + sympy ✅' : env.python.available ? ' (无sympy)' : ' 未安装'}
+              </Tag>
+              <Tag icon={env.latex.available ? <CheckCircleOutlined /> : <WarningOutlined />}
+                color={env.latex.available ? 'success' : 'default'}>
+                LaTeX{env.latex.available ? ` (${env.latex.engine}) ✅` : ' 未安装'}
+              </Tag>
+              <Tag icon={env.ai.available ? <CheckCircleOutlined /> : <WarningOutlined />}
+                color={env.ai.available ? 'success' : 'error'}>
+                🤖 AI{env.ai.available ? ` ${env.ai.provider}/${env.ai.model} ✅` : ' 未配置'}
+              </Tag>
+            </div>
+          ) : null}
+
           <Divider>上传往年真题</Divider>
+          <Alert
+            type="info"
+            showIcon
+            style={{ marginBottom: 12 }}
+            message="支持的文件格式"
+            description={
+              <div style={{ fontSize: 13 }}>
+                <strong>PDF</strong>: AI 视觉识读 + pdf-parse 文本提取 →
+                <strong>DOCX</strong>: pandoc 转 LaTeX →
+                <strong>DOC</strong>: LibreOffice→docx→pandoc →
+                <strong>TEX/MD</strong>: 规范化处理
+              </div>
+            }
+          />
           <Form.Item>
             <Dragger
               multiple

@@ -7,9 +7,10 @@ import {
 import {
   ArrowLeftOutlined, CheckCircleOutlined, CloseCircleOutlined,
   PlayCircleOutlined, DownloadOutlined, FileTextOutlined,
-  ReloadOutlined, QuestionCircleOutlined,
+  ReloadOutlined, QuestionCircleOutlined, WarningOutlined,
 } from '@ant-design/icons';
-import { getProject, approveCheckpoint, startWorkflow } from '../services/project';
+import { getProject, approveCheckpoint, startWorkflow, getBlueprint, getTemplateData } from '../services/project';
+import type { BlueprintResponse, TemplateResponse } from '../services/project';
 import type { ProjectDetail, JobEvent, Checkpoint } from '@exam-maker/shared';
 
 const { Title, Text, Paragraph } = Typography;
@@ -28,7 +29,7 @@ const stepItems = [
 function statusToStep(status: string): number {
   const map: Record<string, number> = {
     drafting: 0, parsing: 1, blueprinting: 2, templating: 3,
-    generating: 5, compiling: 6, done: 6, error: -1,
+    assigning: 4, generating: 5, compiling: 6, done: 6, error: -1,
   };
   return map[status] ?? 0;
 }
@@ -42,6 +43,9 @@ const ProjectWorkspace: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [events, setEvents] = useState<JobEvent[]>([]);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [blueprint, setBlueprint] = useState<BlueprintResponse | null>(null);
+  const [blueprintLoading, setBlueprintLoading] = useState(false);
+  const [template, setTemplate] = useState<TemplateResponse | null>(null);
 
   const loadProject = useCallback(async () => {
     try {
@@ -57,6 +61,29 @@ const ProjectWorkspace: React.FC = () => {
 
   // Initial load
   useEffect(() => { loadProject(); }, [loadProject]);
+
+  // Load blueprint when project enters blueprinting or later
+  useEffect(() => {
+    if (project && ['blueprinting', 'templating', 'generating', 'compiling', 'done'].includes(project.status)) {
+      setBlueprintLoading(true);
+      getBlueprint(projectId).then(bp => {
+        setBlueprint(bp);
+      }).catch(() => {
+        setBlueprint(null);
+      }).finally(() => setBlueprintLoading(false));
+    }
+  }, [project?.status, projectId]);
+
+  // Load template when project enters templating or later
+  useEffect(() => {
+    if (project && ['templating', 'assigning', 'generating', 'compiling', 'done'].includes(project.status)) {
+      getTemplateData(projectId).then(tmpl => {
+        setTemplate(tmpl);
+      }).catch(() => {
+        setTemplate(null);
+      });
+    }
+  }, [project?.status, projectId]);
 
   // SSE stream for real-time events (token passed as query param since EventSource can't set headers)
   useEffect(() => {
@@ -226,6 +253,240 @@ const ProjectWorkspace: React.FC = () => {
           {project.status === 'error' && (
             <Alert type="error" showIcon message="流程出错" description="请查看下方日志了解详情，可点击重试按钮重新执行当前步骤。" />
           )}
+
+          {/* Blueprint section */}
+          {blueprint && blueprint.entries && blueprint.entries.length > 0 && (
+            <Card
+              size="small"
+              title={
+                <Space>
+                  📊 双向细目表
+                  <Tag color="blue">{blueprint.entries.length} 题</Tag>
+                </Space>
+              }
+              extra={
+                <Button type="link" size="small"
+                  onClick={() => {
+                    // Download blueprint.md
+                    const bpFile = project.files?.find(f => f.filename === 'blueprint.md');
+                    if (bpFile) {
+                      const link = document.createElement('a');
+                      link.href = `/api/projects/${projectId}/download/${bpFile.id}`;
+                      link.download = 'blueprint.md';
+                      document.body.appendChild(link); link.click(); document.body.removeChild(link);
+                    }
+                  }}
+                >下载 Markdown</Button>
+              }
+            >
+              <div style={{ maxHeight: 400, overflow: 'auto' }}>
+                {/* Difficulty Summary Bar */}
+                <div style={{ marginBottom: 16 }}>
+                  <Text strong>难度分布：</Text>
+                  <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                    {blueprint.entries.length > 0 && (() => {
+                      const totalPoints = blueprint.entries.reduce((s: number, e) => s + e.points, 0);
+                      const basicPoints = blueprint.entries.filter(e => e.difficulty === '基础').reduce((s: number, e) => s + e.points, 0);
+                      const mediumPoints = blueprint.entries.filter(e => e.difficulty === '中等').reduce((s: number, e) => s + e.points, 0);
+                      const hardPoints = blueprint.entries.filter(e => e.difficulty === '难').reduce((s: number, e) => s + e.points, 0);
+                      type DiffItem = { label: string; pct: number; color: string };
+                      const items: DiffItem[] = [
+                        { label: '基础', pct: Math.round(basicPoints / totalPoints * 100), color: '#52c41a' },
+                        { label: '中等', pct: Math.round(mediumPoints / totalPoints * 100), color: '#faad14' },
+                        { label: '难', pct: Math.round(hardPoints / totalPoints * 100), color: '#f5222d' },
+                      ];
+                      return items.map(d => (
+                        <div key={d.label} style={{
+                          flex: d.pct, background: d.color, color: '#fff',
+                          textAlign: 'center', padding: '4px 0', borderRadius: 4,
+                          fontSize: 13, minWidth: 60,
+                        }}>
+                          {d.label} {d.pct}%
+                        </div>
+                      ));
+                    })()}
+                  </div>
+                </div>
+
+                {/* KP Summary */}
+                <div style={{ marginBottom: 12 }}>
+                  <Text strong>考点清单：</Text>
+                  <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 4 }}>
+                    {(() => {
+                      const kpCounts = new Map<string, number>();
+                      blueprint.entries.forEach(e => {
+                        e.kp.forEach(k => kpCounts.set(k, (kpCounts.get(k) || 0) + 1));
+                      });
+                      return [...kpCounts.entries()]
+                        .sort((a, b) => b[1] - a[1])
+                        .map(([kp, freq], i) => (
+                          <Tag key={kp} color={freq >= 2 ? 'blue' : 'default'}>
+                            K{i + 1}: {kp}{freq >= 2 ? ' ⭐' : ''}
+                          </Tag>
+                        ));
+                    })()}
+                  </div>
+                </div>
+
+                {/* Question Mapping Table */}
+                <Text strong>逐题考点映射：</Text>
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, marginTop: 8 }}>
+                    <thead>
+                      <tr style={{ background: '#fafafa', borderBottom: '2px solid #e8e8e8' }}>
+                        <th style={{ padding: '6px 8px', textAlign: 'left' }}>题号</th>
+                        <th style={{ padding: '6px 8px', textAlign: 'left' }}>题型</th>
+                        <th style={{ padding: '6px 8px', textAlign: 'center' }}>分值</th>
+                        <th style={{ padding: '6px 8px', textAlign: 'left' }}>考点</th>
+                        <th style={{ padding: '6px 8px', textAlign: 'center' }}>难度</th>
+                        <th style={{ padding: '6px 8px', textAlign: 'left' }}>认知层次</th>
+                        <th style={{ padding: '6px 8px', textAlign: 'left' }}>设问范式</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {blueprint.entries.map((e, i) => (
+                        <tr key={i} style={{ borderBottom: '1px solid #f0f0f0' }}>
+                          <td style={{ padding: '4px 8px' }}>{e.no}</td>
+                          <td style={{ padding: '4px 8px' }}>{e.type}</td>
+                          <td style={{ padding: '4px 8px', textAlign: 'center' }}>{e.points}</td>
+                          <td style={{ padding: '4px 8px' }}>{e.kp.join('、')}</td>
+                          <td style={{ padding: '4px 8px', textAlign: 'center' }}>
+                            <Tag color={e.difficulty === '基础' ? 'success' : e.difficulty === '中等' ? 'warning' : 'error'}
+                              style={{ margin: 0, fontSize: 11 }}>
+                              {e.difficulty}
+                            </Tag>
+                          </td>
+                          <td style={{ padding: '4px 8px' }}>{e.cognition}</td>
+                          <td style={{ padding: '4px 8px', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                            title={e.stem_kind}>{e.stem_kind}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                {blueprint.entries[0]?.note?.includes('启发式') && (
+                  <Alert type="warning" showIcon style={{ marginTop: 12 }}
+                    message="当前为启发式分析结果，设置 ANTHROPIC_API_KEY 后可启用 AI 深度考点分析" />
+                )}
+              </div>
+            </Card>
+          )}
+
+          {/* Template section */}
+          {template && template.template && template.template.sections.length > 0 && (
+            <Card
+              size="small"
+              title={
+                <Space>
+                  📐 试卷模板
+                  <Tag color={template.template.verified ? 'success' : 'warning'}>
+                    {template.template.verified ? '✅ 已核对' : '⚠ 待审核'}
+                  </Tag>
+                </Space>
+              }
+            >
+              {/* Summary bar */}
+              <div style={{ marginBottom: 16, display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+                <Tag color="blue">总分: {template.template.totalScore}分</Tag>
+                <Tag color="blue">时长: {template.template.duration}分钟</Tag>
+                <Tag>{template.template.sections.length} 种题型</Tag>
+                <Tag>
+                  共 {template.template.sections.reduce((a: number, s) => a + s.count, 0)} 题
+                </Tag>
+              </div>
+
+              {/* Section structure */}
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                  <thead>
+                    <tr style={{ background: '#fafafa', borderBottom: '2px solid #e8e8e8' }}>
+                      <th style={{ padding: '8px 12px', textAlign: 'center' }}>序号</th>
+                      <th style={{ padding: '8px 12px', textAlign: 'left' }}>题型</th>
+                      <th style={{ padding: '8px 12px', textAlign: 'center' }}>题量</th>
+                      <th style={{ padding: '8px 12px', textAlign: 'center' }}>单题分值</th>
+                      <th style={{ padding: '8px 12px', textAlign: 'right' }}>小计</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {template.template.sections.map((s) => {
+                      const expected = s.count * s.pointsPerQuestion;
+                      const matched = Math.abs(s.subtotal - expected) < 0.5;
+                      return (
+                        <tr key={s.index} style={{
+                          borderBottom: '1px solid #f0f0f0',
+                          background: matched ? 'transparent' : '#fff7e6',
+                        }}>
+                          <td style={{ padding: '6px 12px', textAlign: 'center' }}>{s.index}</td>
+                          <td style={{ padding: '6px 12px' }}><strong>{s.type}</strong></td>
+                          <td style={{ padding: '6px 12px', textAlign: 'center' }}>{s.count}</td>
+                          <td style={{ padding: '6px 12px', textAlign: 'center' }}>{s.pointsPerQuestion}</td>
+                          <td style={{ padding: '6px 12px', textAlign: 'right', fontWeight: 'bold' }}>
+                            {s.subtotal}
+                            {!matched && (
+                              <Tooltip title={`期望 ${s.count} × ${s.pointsPerQuestion} = ${expected}`}>
+                                <WarningOutlined style={{ color: '#faad14', marginLeft: 6 }} />
+                              </Tooltip>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    <tr style={{ borderTop: '2px solid #e8e8e8', fontWeight: 'bold' }}>
+                      <td colSpan={4} style={{ padding: '8px 12px', textAlign: 'right' }}>合计</td>
+                      <td style={{ padding: '8px 12px', textAlign: 'right' }}>
+                        {template.template.sections.reduce((a: number, s) => a + s.subtotal, 0)}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Score check */}
+              <div style={{ marginTop: 12, fontSize: 13 }}>
+                {template.template.sections.reduce((a: number, s) => a + s.subtotal, 0) === template.template.totalScore ? (
+                  <Tag color="success">✅ 分值核对: Σ各节小计 = 总分 {template.template.totalScore}</Tag>
+                ) : (
+                  <Tag color="error">⚠ 分值偏差: 小计 {template.template.sections.reduce((a: number, s) => a + s.subtotal, 0)} ≠ 总分 {template.template.totalScore}</Tag>
+                )}
+              </div>
+            </Card>
+          )}
+
+          {/* Generated Papers section */}
+          {project.files && project.files.filter(f => f.type === 'generated_paper').length > 0 && (() => {
+            const papers = project.files.filter(f => f.type === 'generated_paper').sort((a, b) => a.filename.localeCompare(b.filename));
+            return (
+            <Card size="small" title={
+              <Space>
+                📄 生成试卷
+                <Tag color="green">{papers.length} 套</Tag>
+              </Space>
+            }>
+              <div>
+                {papers.map((file) => (
+                  <div key={file.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid #f0f0f0' }}>
+                    <Space>
+                      <FileTextOutlined style={{ color: '#1677ff' }} />
+                      <span>{file.filename}</span>
+                      <Text type="secondary" style={{ fontSize: 12 }}>
+                        {new Date(file.createdAt).toLocaleTimeString()}
+                      </Text>
+                    </Space>
+                    <Button type="link" size="small" icon={<DownloadOutlined />}
+                      onClick={() => {
+                        const link = document.createElement('a');
+                        link.href = `/api/projects/${projectId}/download/${file.id}`;
+                        link.download = file.filename;
+                        document.body.appendChild(link); link.click(); document.body.removeChild(link);
+                      }}>
+                      下载
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            </Card>
+            );
+          })()}
 
           {/* Files section */}
           {project.files && project.files.length > 0 && (

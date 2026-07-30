@@ -43,6 +43,59 @@ export async function startWorkflow(projectId: number): Promise<void> {
   await api.post(`/projects/${projectId}/start`);
 }
 
+export async function getEnvironment(): Promise<{ env: Record<string, unknown>; report: string }> {
+  const res = await api.get('/projects/env');
+  return res.data.data;
+}
+
+export interface BlueprintResponse {
+  entries: Array<{
+    src: string; no: string; type: string; points: number;
+    kp: string[]; difficulty: string; cognition: string; stem_kind: string; note?: string;
+  }>;
+  markdown: string;
+}
+
+export async function getBlueprint(projectId: number): Promise<BlueprintResponse | null> {
+  const res = await api.get<{ success: boolean; data: BlueprintResponse | null }>(`/projects/${projectId}/blueprint`);
+  return res.data.data;
+}
+
+export interface TemplateResponse {
+  template: {
+    course: string; totalScore: number; duration: number;
+    sections: Array<{ index: number; type: string; count: number; pointsPerQuestion: number; subtotal: number }>;
+    verified: boolean; verifyNotes: string[];
+  };
+  markdown: string;
+}
+
+export async function getTemplateData(projectId: number): Promise<TemplateResponse | null> {
+  const res = await api.get<{ success: boolean; data: TemplateResponse | null }>(`/projects/${projectId}/template`);
+  return res.data.data;
+}
+
+export interface BlueprintData {
+  entries: Array<{
+    src: string; no: string; type: string; points: number;
+    kp: string[]; difficulty: string; cognition: string; stem_kind: string; note?: string;
+  }>;
+  kpList: Array<{
+    id: string; name: string; description: string;
+    frequency: number; totalPoints: number; isRequired: boolean;
+  }>;
+  matrix: {
+    headers: string[]; columnTotals: number[];
+    rows: Array<{
+      kpId: string; kpName: string; basic: number; medium: number;
+      hard: number; total: number; frequency: number; isRequired: boolean;
+    }>;
+  };
+  difficultySummary: Record<string, { target: number; actual: number; passed: boolean }>;
+  verified: boolean;
+  verifyNotes: string[];
+}
+
 export function getEventsUrl(projectId: number): string {
   return `/api/projects/${projectId}/events`;
 }

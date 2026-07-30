@@ -4,9 +4,10 @@ import { db, schema, rawDb, saveToDisk } from '../db/index.js';
 import { createProjectSchema, checkpointActionSchema } from '@exam-maker/shared';
 import { AppError } from '../middleware/errorHandler.js';
 import type { AuthRequest } from '../middleware/auth.js';
-import { existsSync, mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { startWorkflow, continueWorkflow } from '../services/workflow.js';
+import { startWorkflow, continueWorkflow, getProjectDir } from '../services/workflow.js';
+import { detectEnvironment, envReport } from '../services/envDetect.js';
 
 // SSE clients registry: projectId -> Set of response objects
 const sseClients = new Map<number, Set<Response>>();
@@ -193,6 +194,68 @@ export async function startProjectWorkflow(req: AuthRequest, res: Response, next
     startWorkflow(projectId).catch((err) => {
       console.error('Workflow error:', err);
     });
+  } catch (err) { next(err); }
+}
+
+// ====== Environment Detection ======
+export function getEnvironment(_req: AuthRequest, res: Response) {
+  const env = detectEnvironment();
+  res.json({ success: true, data: { env, report: envReport(env) } });
+}
+
+// ====== Blueprint Data ======
+export function getBlueprint(req: AuthRequest, res: Response, next: NextFunction) {
+  try {
+    const projectId = Number(req.params.id);
+    const project = db.select().from(schema.projects)
+      .where(eq(schema.projects.id, projectId)).get();
+    if (!project || project.userId !== req.userId) throw new AppError(403, '无权访问');
+
+    const jsonlPath = join(getProjectDir(projectId), 'blueprint.jsonl');
+    const mdPath = join(getProjectDir(projectId), 'blueprint.md');
+
+    if (!existsSync(jsonlPath)) {
+      return res.json({ success: true, data: null });
+    }
+
+    const jsonlContent = readFileSync(jsonlPath, 'utf-8');
+    const entries = jsonlContent.split('\n').filter(l => l.trim()).map(l => JSON.parse(l));
+
+    let mdContent = '';
+    try { mdContent = readFileSync(mdPath, 'utf-8'); } catch { /* ignore */ }
+
+    res.json({ success: true, data: { entries, markdown: mdContent } });
+  } catch (err) { next(err); }
+}
+
+// ====== Template Data ======
+export function getTemplate(req: AuthRequest, res: Response, next: NextFunction) {
+  try {
+    const projectId = Number(req.params.id);
+    const project = db.select().from(schema.projects)
+      .where(eq(schema.projects.id, projectId)).get();
+    if (!project || project.userId !== req.userId) throw new AppError(403, '无权访问');
+
+    const jsonPath = join(getProjectDir(projectId), 'template.json');
+    const mdPath = join(getProjectDir(projectId), 'template.md');
+    const diffPath = join(getProjectDir(projectId), 'difficulty.json');
+
+    if (!existsSync(jsonPath)) {
+      return res.json({ success: true, data: null });
+    }
+
+    const jsonContent = readFileSync(jsonPath, 'utf-8');
+    const template = JSON.parse(jsonContent);
+
+    let mdContent = '';
+    try { mdContent = readFileSync(mdPath, 'utf-8'); } catch { /* ignore */ }
+
+    let difficulty = null;
+    if (existsSync(diffPath)) {
+      try { difficulty = JSON.parse(readFileSync(diffPath, 'utf-8')); } catch { /* ignore */ }
+    }
+
+    res.json({ success: true, data: { template, markdown: mdContent, difficulty } });
   } catch (err) { next(err); }
 }
 
