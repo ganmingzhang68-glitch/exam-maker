@@ -1,0 +1,14 @@
+{
+  "name": "@exam-maker/shared",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "index.ts",
+  "types": "index.ts",
+  "exports": {
+    ".": "./index.ts",
+    "./*": "./*"
+  },
+  "dependencies": {
+    "zod": "^3.23.8"
+  }
+}
