@@ -16,7 +16,8 @@
     "lint": "eslint client/src server/src server/test shared --max-warnings=0",
     "db:generate": "npm run db:generate -w server",
     "db:migrate": "npm run db:migrate -w server",
-    "db:seed": "npm run db:seed -w server"
+    "db:seed": "npm run db:seed -w server",
+    "questions:import-generated": "npm run questions:import-generated -w server"
   },
   "devDependencies": {
     "@types/sql.js": "^1.4.11",
