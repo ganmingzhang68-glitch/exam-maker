@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import {
   Button,
+  Checkbox,
   Form,
   Input,
   InputNumber,
@@ -15,6 +16,8 @@ import {
 } from 'antd';
 import type { TableColumnsType } from 'antd';
 import { EditOutlined, PlusOutlined, ReloadOutlined, SendOutlined, StopOutlined } from '@ant-design/icons';
+import { BarChartOutlined } from '@ant-design/icons';
+import { useNavigate } from 'react-router-dom';
 import type { ExamStatus, Paper, TeacherExamSummary } from '@exam-maker/shared';
 import { listPapers } from '../services/paper';
 import {
@@ -34,6 +37,9 @@ interface ExamFormValues {
   endAt: string;
   durationMinutes: number;
   allowedAttempts: number;
+  fillBlankIgnoreCase: boolean;
+  showAnswers: boolean;
+  showAnalysis: boolean;
 }
 
 const statusLabels: Record<ExamStatus, string> = {
@@ -59,6 +65,7 @@ function toLocalInput(iso: string | null): string {
 }
 
 const ExamList: React.FC = () => {
+  const navigate = useNavigate();
   const [form] = Form.useForm<ExamFormValues>();
   const [exams, setExams] = useState<TeacherExamSummary[]>([]);
   const [papers, setPapers] = useState<Paper[]>([]);
@@ -91,6 +98,9 @@ const ExamList: React.FC = () => {
       endAt: '',
       durationMinutes: 120,
       allowedAttempts: 1,
+      fillBlankIgnoreCase: false,
+      showAnswers: false,
+      showAnalysis: false,
     });
     setModalOpen(true);
   };
@@ -104,6 +114,9 @@ const ExamList: React.FC = () => {
       endAt: toLocalInput(exam.endAt),
       durationMinutes: exam.durationMinutes,
       allowedAttempts: exam.allowedAttempts,
+      fillBlankIgnoreCase: exam.fillBlankIgnoreCase,
+      showAnswers: exam.showAnswers,
+      showAnalysis: exam.showAnalysis,
     });
     setModalOpen(true);
   };
@@ -176,11 +189,16 @@ const ExamList: React.FC = () => {
             </>
           )}
           {exam.status === 'published' && (
-            <Popconfirm title="确认关闭考试？关闭后学生不能再开始新的作答。" onConfirm={() => handleClose(exam.id)}>
-              <Button size="small" danger icon={<StopOutlined />}>关闭</Button>
-            </Popconfirm>
+            <>
+              <Button size="small" icon={<BarChartOutlined />} onClick={() => navigate(`/exams/${exam.id}/results`)}>成绩</Button>
+              <Popconfirm title="确认关闭考试？关闭后学生不能再开始新的作答。" onConfirm={() => handleClose(exam.id)}>
+                <Button size="small" danger icon={<StopOutlined />}>关闭</Button>
+              </Popconfirm>
+            </>
           )}
-          {exam.status === 'closed' && <Text type="secondary">已结束</Text>}
+          {exam.status === 'closed' && (
+            <Button size="small" icon={<BarChartOutlined />} onClick={() => navigate(`/exams/${exam.id}/results`)}>查看成绩</Button>
+          )}
         </Space>
       ),
     },
@@ -255,6 +273,18 @@ const ExamList: React.FC = () => {
               <InputNumber min={1} max={20} style={{ width: '100%' }} />
             </Form.Item>
           </div>
+          <Form.Item name="fillBlankIgnoreCase" valuePropName="checked">
+            <Checkbox>填空题判分忽略英文字母大小写</Checkbox>
+          </Form.Item>
+          <Space direction="vertical" size={4} style={{ marginBottom: 16 }}>
+            <Text strong>学生提交后可见内容</Text>
+            <Form.Item name="showAnswers" valuePropName="checked" noStyle>
+              <Checkbox>允许学生查看标准答案</Checkbox>
+            </Form.Item>
+            <Form.Item name="showAnalysis" valuePropName="checked" noStyle>
+              <Checkbox>允许学生查看题目解析</Checkbox>
+            </Form.Item>
+          </Space>
         </Form>
       </Modal>
     </div>

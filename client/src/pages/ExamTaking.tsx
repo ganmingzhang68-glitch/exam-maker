@@ -148,6 +148,7 @@ const ExamTaking: React.FC = () => {
           const submitted = await submitAttempt(attemptId);
           setDetail(submitted);
           message.success(submitted.idempotent ? '试卷已提交，请勿重复操作' : '试卷提交成功');
+          navigate(`/attempts/${attemptId}/result`, { replace: true });
         } catch (error) {
           message.error(errorMessage(error, error instanceof Error ? error.message : '提交失败'));
           throw error;

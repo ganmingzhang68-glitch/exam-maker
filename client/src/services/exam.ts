@@ -4,7 +4,10 @@ import type {
   ApiResponse,
   AttemptDetail,
   StudentExamSummary,
+  StudentAttemptResult,
+  TeacherAttemptGradingDetail,
   TeacherExamSummary,
+  TeacherExamStudentResult,
 } from '@exam-maker/shared';
 import api from './api';
 
@@ -15,6 +18,9 @@ export interface ExamInput {
   endAt: string;
   durationMinutes: number;
   allowedAttempts: number;
+  fillBlankIgnoreCase: boolean;
+  showAnswers: boolean;
+  showAnalysis: boolean;
 }
 
 export async function listTeacherExams(): Promise<TeacherExamSummary[]> {
@@ -71,5 +77,39 @@ export async function saveAnswer(
 
 export async function submitAttempt(id: number): Promise<AttemptDetail & { idempotent: boolean }> {
   const response = await api.post<ApiResponse<AttemptDetail & { idempotent: boolean }>>(`/attempts/${id}/submit`);
+  return response.data.data!;
+}
+
+export async function listExamResults(examId: number): Promise<TeacherExamStudentResult[]> {
+  const response = await api.get<ApiResponse<TeacherExamStudentResult[]>>(`/exams/${examId}/results`);
+  return response.data.data ?? [];
+}
+
+export async function getTeacherAttemptResult(
+  examId: number,
+  attemptId: number,
+): Promise<TeacherAttemptGradingDetail> {
+  const response = await api.get<ApiResponse<TeacherAttemptGradingDetail>>(
+    `/exams/${examId}/attempts/${attemptId}`,
+  );
+  return response.data.data!;
+}
+
+export async function gradeSubjectiveAnswer(
+  examId: number,
+  attemptId: number,
+  answerId: number,
+  score: number,
+  feedback?: string | null,
+): Promise<TeacherAttemptGradingDetail> {
+  const response = await api.patch<ApiResponse<TeacherAttemptGradingDetail>>(
+    `/exams/${examId}/attempts/${attemptId}/answers/${answerId}/grade`,
+    { score, feedback: feedback ?? null },
+  );
+  return response.data.data!;
+}
+
+export async function getStudentResult(attemptId: number): Promise<StudentAttemptResult> {
+  const response = await api.get<ApiResponse<StudentAttemptResult>>(`/attempts/${attemptId}/result`);
   return response.data.data!;
 }

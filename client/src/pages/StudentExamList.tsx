@@ -88,7 +88,7 @@ const StudentExamList: React.FC = () => {
         if (exam.latestAttempt && ['submitted', 'grading', 'graded'].includes(exam.latestAttempt.status)) {
           return (
             <Space>
-              <Button onClick={() => navigate(`/attempts/${exam.latestAttempt!.id}`)}>查看提交</Button>
+              <Button onClick={() => navigate(`/attempts/${exam.latestAttempt!.id}/result`)}>查看成绩</Button>
               {canStartAgain(exam) && (
                 <Button type="primary" loading={startingId === exam.id} onClick={() => handleStart(exam.id)}>再次作答</Button>
               )}

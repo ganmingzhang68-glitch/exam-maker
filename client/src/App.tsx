@@ -15,6 +15,9 @@ import PaperEdit from './pages/PaperEdit';
 import ExamList from './pages/ExamList';
 import StudentExamList from './pages/StudentExamList';
 import ExamTaking from './pages/ExamTaking';
+import ExamResults from './pages/ExamResults';
+import AttemptGrading from './pages/AttemptGrading';
+import StudentResult from './pages/StudentResult';
 import NotFound from './pages/NotFound';
 
 const teacherRoles = ['teacher', 'admin'] as const;
@@ -63,8 +66,11 @@ const App: React.FC = () => {
         <Route path="/papers" element={<TeacherRoute><PaperList /></TeacherRoute>} />
         <Route path="/papers/:id" element={<TeacherRoute><PaperEdit /></TeacherRoute>} />
         <Route path="/exams" element={<TeacherRoute><ExamList /></TeacherRoute>} />
+        <Route path="/exams/:id/results" element={<TeacherRoute><ExamResults /></TeacherRoute>} />
+        <Route path="/exams/:id/attempts/:attemptId/grade" element={<TeacherRoute><AttemptGrading /></TeacherRoute>} />
         <Route path="/student/exams" element={<StudentRoute><StudentExamList /></StudentRoute>} />
         <Route path="/attempts/:id" element={<StudentRoute><ExamTaking /></StudentRoute>} />
+        <Route path="/attempts/:id/result" element={<StudentRoute><StudentResult /></StudentRoute>} />
       </Route>
 
       <Route path="/404" element={<NotFound />} />
