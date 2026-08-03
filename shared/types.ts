@@ -223,6 +223,7 @@ export interface Exam {
   startAt: string | null;
   endAt: string | null;
   durationMinutes: number;
+  allowedAttempts: number;
   publishedAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -244,6 +245,7 @@ export interface Attempt {
   studentId: number;
   attemptNo: number;
   status: AttemptStatus;
+  paperSnapshot: AttemptPaperSnapshot | null;
   startedAt: string | null;
   expiresAt: string | null;
   submittedAt: string | null;
@@ -257,11 +259,12 @@ export interface Attempt {
 }
 
 export type AnswerGradingStatus = 'ungraded' | 'auto_graded' | 'manual_graded';
+export type AnswerContent = string | string[] | Record<string, unknown>;
 export interface Answer {
   id: number;
   attemptId: number;
   paperQuestionId: number;
-  content: Record<string, unknown> | null;
+  content: AnswerContent | null;
   autoScore: number | null;
   manualScore: number | null;
   finalScore: number | null;
@@ -273,4 +276,62 @@ export interface Answer {
   savedAt: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface AttemptQuestionSnapshot {
+  paperQuestionId: number;
+  questionId: number;
+  orderNo: number;
+  sectionTitle: string | null;
+  score: number;
+  type: QuestionType;
+  stem: string;
+  options: string[] | null;
+}
+
+export interface AttemptPaperSnapshot {
+  paper: {
+    id: number;
+    title: string;
+    course: string;
+    instructions: string | null;
+    totalScore: number;
+  };
+  questions: AttemptQuestionSnapshot[];
+}
+
+export type StudentExamAvailability = 'upcoming' | 'available' | 'ended' | 'completed';
+export interface StudentExamSummary {
+  id: number;
+  title: string;
+  status: ExamStatus;
+  startAt: string | null;
+  endAt: string | null;
+  durationMinutes: number;
+  allowedAttempts: number;
+  paperTitle: string;
+  totalScore: number;
+  attemptCount: number;
+  availability: StudentExamAvailability;
+  latestAttempt: Attempt | null;
+}
+
+export interface TeacherExamSummary extends Exam {
+  paperTitle: string;
+  paperTotalScore: number;
+  assignmentCount: number;
+  attemptCount: number;
+}
+
+export interface AttemptDetail {
+  attempt: Attempt;
+  exam: {
+    id: number;
+    title: string;
+    endAt: string | null;
+    durationMinutes: number;
+  };
+  paper: AttemptPaperSnapshot['paper'];
+  questions: AttemptQuestionSnapshot[];
+  answers: Answer[];
 }

@@ -125,3 +125,37 @@ export const reorderPaperQuestionsSchema = z.object({
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['paperQuestionIds'], message: '题目顺序中不能包含重复项' });
   }
 });
+
+export const examStatusSchema = z.enum(['draft', 'published', 'closed']);
+
+export const createExamSchema = z.object({
+  paperId: z.number().int().positive(),
+  title: z.string().trim().min(1, '考试名称不能为空').max(200),
+  startAt: z.string().datetime({ offset: true }),
+  endAt: z.string().datetime({ offset: true }),
+  durationMinutes: z.number().int().min(1).max(1440),
+  allowedAttempts: z.number().int().min(1).max(20).default(1),
+}).superRefine((value, ctx) => {
+  if (new Date(value.startAt).getTime() >= new Date(value.endAt).getTime()) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['endAt'], message: '结束时间必须晚于开始时间' });
+  }
+});
+
+export const updateExamSchema = z.object({
+  paperId: z.number().int().positive().optional(),
+  title: z.string().trim().min(1, '考试名称不能为空').max(200).optional(),
+  startAt: z.string().datetime({ offset: true }).optional(),
+  endAt: z.string().datetime({ offset: true }).optional(),
+  durationMinutes: z.number().int().min(1).max(1440).optional(),
+  allowedAttempts: z.number().int().min(1).max(20).optional(),
+});
+
+export const answerContentSchema = z.union([
+  z.string().max(100000),
+  z.array(z.string().max(10000)).max(100),
+  z.record(z.unknown()),
+]).nullable();
+
+export const saveAnswerSchema = z.object({
+  content: answerContentSchema,
+});

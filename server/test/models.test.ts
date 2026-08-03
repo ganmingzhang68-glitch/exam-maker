@@ -39,6 +39,7 @@ test('model statuses, role checks and assignment uniqueness are enforced', async
 
   assert.throws(() => database.run("UPDATE questions SET status='published' WHERE id=1"));
   assert.throws(() => database.run("UPDATE attempts SET status='unknown' WHERE id=1"));
+  assert.throws(() => database.run("UPDATE exams SET allowed_attempts=0 WHERE id=1"));
   assert.throws(() => database.run("INSERT INTO exam_assignments(exam_id, student_id) VALUES (1, 2)"));
   assert.deepEqual(database.exec('SELECT status FROM attempts WHERE id=1')[0].values, [['not_started']]);
   database.close();

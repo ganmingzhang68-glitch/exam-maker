@@ -15,6 +15,7 @@ import projectRoutes from './routes/project.js';
 import questionRoutes from './routes/question.js';
 import examRoutes from './routes/exam.js';
 import paperRoutes from './routes/paper.js';
+import attemptRoutes from './routes/attempt.js';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -36,6 +37,7 @@ app.use('/api/projects', projectRoutes);
 app.use('/api/questions', questionRoutes);
 app.use('/api/papers', paperRoutes);
 app.use('/api/exams', examRoutes);
+app.use('/api/attempts', attemptRoutes);
 
 // Error handler (must be last)
 app.use(errorHandler);

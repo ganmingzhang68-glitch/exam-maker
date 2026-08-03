@@ -2,13 +2,14 @@ import type { Database } from 'sql.js';
 import { rawDb } from './index.js';
 import { initialMigration } from './migrations/001_initial.js';
 import { examMvpFoundationMigration } from './migrations/002_exam_mvp_foundation.js';
+import { examDeliveryMigration } from './migrations/003_exam_delivery.js';
 
 interface Migration {
   id: string;
   up(database: Database): void;
 }
 
-const migrations: Migration[] = [initialMigration, examMvpFoundationMigration];
+const migrations: Migration[] = [initialMigration, examMvpFoundationMigration, examDeliveryMigration];
 
 export function runMigrations(database: Database = rawDb): void {
   database.run(`CREATE TABLE IF NOT EXISTS schema_migrations (

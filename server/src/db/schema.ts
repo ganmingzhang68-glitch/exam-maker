@@ -124,6 +124,7 @@ export const exams = sqliteTable('exams', {
   startAt: text('start_at'),
   endAt: text('end_at'),
   durationMinutes: integer('duration_minutes').notNull().default(120),
+  allowedAttempts: integer('allowed_attempts').notNull().default(1),
   publishedAt: text('published_at'),
   createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
   updatedAt: text('updated_at').notNull().default(sql`(datetime('now'))`),
@@ -151,6 +152,7 @@ export const attempts = sqliteTable('attempts', {
   status: text('status', {
     enum: ['not_started', 'in_progress', 'submitted', 'grading', 'graded'],
   }).notNull().default('not_started'),
+  paperSnapshot: text('paper_snapshot'),
   startedAt: text('started_at'),
   expiresAt: text('expires_at'),
   submittedAt: text('submitted_at'),
