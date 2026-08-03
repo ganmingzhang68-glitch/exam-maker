@@ -166,7 +166,28 @@ export function updateQuestion(req: AuthRequest, res: Response, next: NextFuncti
     const id = positiveIdSchema.parse(req.params.id);
     const existing = getOwnedQuestion(req, id);
     const data = updateQuestionSchema.parse(req.body);
-    assertSourceOwnership(req, data.sourceFileId, data.sourceProjectId);
+    const existingSerialized = serializeQuestion(existing);
+    createQuestionSchema.parse({
+      type: data.type ?? existing.type,
+      stem: data.stem ?? existing.stem,
+      options: data.options === undefined ? existingSerialized.options : data.options,
+      answerKey: data.answerKey === undefined ? existingSerialized.answerKey : data.answerKey,
+      analysis: data.analysis === undefined ? existing.analysis : data.analysis,
+      scoringRubric: data.scoringRubric === undefined ? existingSerialized.scoringRubric : data.scoringRubric,
+      defaultScore: data.defaultScore ?? existing.defaultScore,
+      difficulty: data.difficulty === undefined ? existing.difficulty : data.difficulty,
+      knowledgePoints: data.knowledgePoints === undefined ? existingSerialized.knowledgePoints : data.knowledgePoints,
+      status: data.status ?? existing.status,
+      sourceFileId: data.sourceFileId === undefined ? existing.sourceFileId : data.sourceFileId,
+      sourceProjectId: data.sourceProjectId === undefined ? existing.sourceProjectId : data.sourceProjectId,
+      sourceQuestionNo: data.sourceQuestionNo === undefined ? existing.sourceQuestionNo : data.sourceQuestionNo,
+      metadata: data.metadata === undefined ? existingSerialized.metadata : data.metadata,
+    });
+    assertSourceOwnership(
+      req,
+      data.sourceFileId === undefined ? existing.sourceFileId : data.sourceFileId,
+      data.sourceProjectId === undefined ? existing.sourceProjectId : data.sourceProjectId,
+    );
 
     const values: Partial<typeof schema.questions.$inferInsert> = {
       ...data,

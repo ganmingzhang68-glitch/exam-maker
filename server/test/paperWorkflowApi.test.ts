@@ -88,6 +88,11 @@ test('teacher question review to paper workflow is permission-safe and locks pub
     assert.equal(edited.status, 200);
     assert.equal(edited.body.data?.stem, '教师修改后的题干');
 
+    const invalidChoiceEdit = await request(`/questions/${questionId}`, {
+      method: 'PATCH', token: teacherToken, body: { options: ['只有一个选项'] },
+    });
+    assert.equal(invalidChoiceEdit.status, 400);
+
     const reviewed = await request<{ status: string }>(`/questions/${questionId}/review`, {
       method: 'PATCH', token: teacherToken, body: { status: 'reviewed' },
     });
