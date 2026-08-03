@@ -19,6 +19,8 @@
 | 9 | 前端接入 | 未开始 | — |
 | 10 | E2E fixture 与测试 | 未开始 | — |
 
+Prompt 专项（2026-08-04）：已完成全部旧 Prompt 审计，建立 12 个版本化单职责 Prompt、严格 Zod 输入输出、正确/异常示例、注入边界和自动化测试；活跃业务调用已收口到 `promptRunner.ts`。PromptVersion/AiRun 持久化以及答案对齐、蓝图生成阶段的正式接入仍待后续步骤。
+
 第一步实现文件：`shared/questionGeneration.ts`、`server/src/db/schema.ts`、
 `server/src/db/migrations/005_question_generation_domain.ts`。旧表和旧字段均保留；旧项目、
 往年卷文件、AI 题和生成卷文件通过兼容引用映射到新领域表。API 与页面尚未在第一步接入。

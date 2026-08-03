@@ -6,7 +6,9 @@ import { addEvent } from '../controllers/project.js';
 import { getProjectDir } from './workflow.js';
 import { and, eq } from 'drizzle-orm';
 import { importGeneratedQuestionsFromProject } from './questionImporter.js';
-import { isConfigured, sendMessage } from './ai.js';
+import { isConfigured } from './ai.js';
+import { runStructuredPrompt } from './promptRunner.js';
+import { independentValidationPrompt } from '../prompts/independentValidationPrompt.js';
 
 export interface CompileResult {
   paperName: string;
@@ -219,19 +221,20 @@ function convertFile(texPath: string, outputDir: string, format: string): { outP
 
 // ====== Post-conversion Check ======
 async function verifyConversion(texSource: string, convertedFile: string, format: string): Promise<boolean> {
-  if (!isConfigured()) return false;
   try {
     const tex = readFileSync(texSource, 'utf-8');
+    if (format === 'docx') {
+      const docx = readFileSync(convertedFile);
+      return docx.byteLength > 4 && docx[0] === 0x50 && docx[1] === 0x4b;
+    }
+    if (!isConfigured()) return false;
     const conv = readFileSync(convertedFile, 'utf-8');
-    const response = await sendMessage(
-      '你是格式转换核对员。比对tex源码与转换后文件，报PASS或具体差异。',
-      [{
-        role: 'user',
-        content: `核对转换完整性:\n## tex源码\n${tex.slice(0, 2000)}\n## ${format}\n${conv.slice(0, 2000)}\n\n题目/公式/表格/分值是否完整？输出 VERIFY: PASS 或 VERIFY: ISSUES`
-      }],
-      { maxTokens: 1500 }
-    );
-    return response.includes('VERIFY: PASS');
+    const validation = await runStructuredPrompt(independentValidationPrompt, {
+      scope: 'export_integrity', canonicalObject: { sourceLatex: tex, convertedContent: conv, format },
+      constraints: { preserveQuestions: true, preserveFormulae: true, preserveTables: true, preserveScores: true },
+      deterministicFindings: [], sourceEvidence: [],
+    }, { maxTokens: 2500 });
+    return validation.output.status === 'ok' && validation.output.passed;
   } catch { return false; }
 }
 

@@ -3,9 +3,15 @@ import { join } from 'node:path';
 import { db, schema, saveToDisk } from '../db/index.js';
 import { addEvent } from '../controllers/project.js';
 import { getProjectDir } from './workflow.js';
-import { isConfigured, sendMessage } from './ai.js';
+import { isConfigured } from './ai.js';
 import { and, eq } from 'drizzle-orm';
 import type { DifficultyRatio } from '@exam-maker/shared';
+import type { z } from 'zod';
+import { runStructuredPrompt } from './promptRunner.js';
+import { questionGenerationPrompt } from '../prompts/questionGenerationPrompt.js';
+import { answerGenerationPrompt } from '../prompts/answerGenerationPrompt.js';
+import { rubricGenerationPrompt } from '../prompts/rubricGenerationPrompt.js';
+import { independentValidationPrompt } from '../prompts/independentValidationPrompt.js';
 
 interface LedgerEntry {
   setIndex: number;
@@ -127,23 +133,74 @@ async function generateSinglePaper(
   texSources: Array<typeof schema.projectFiles.$inferSelect>,
   ledger: LedgerEntry[]
 ): Promise<GenerateResult & { ledgerEntries?: LedgerEntry[] }> {
-  const systemPrompt = buildSystemPrompt(course, difficulty, scope, verifyMode, ledger, setIndex, nSets);
-  const userPrompt = buildUserPrompt(setIndex, nSets, course, difficulty, blueprint, template, difficultyData, texSources, ledger);
-
   addEvent(projectId, 'step-5', 'log',
-    `  🎲 第${setIndex}套: 按8轴轮换变形, 当前已用变形轴: ${usedAxes(ledger)}`);
+    `  第${setIndex}套: 按结构化题位逐题生成；当前已用变形轴: ${usedAxes(ledger)}`);
 
-  const response = await sendMessage(systemPrompt, [{ role: 'user', content: userPrompt }], { maxTokens: 32768 });
+  const plan = parseLegacyGenerationSlots(difficultyData, setIndex);
+  if (plan.length === 0) throw new Error('缺少 GenerationPlan 题位，禁止自由生成整套试卷');
+  const references = texSources.map(file => ({
+    sourceDocumentId: file.id,
+    excerpt: readFileSync(file.filepath, 'utf-8'),
+    evidence: [] as Array<{ sourceDocumentId: number; pageNumber: number | null; blockId: string | null; quote: string }>,
+  }));
+  const items: StructuredGeneratedItem[] = [];
+  for (const [index, slot] of plan.entries()) {
+    const questionRun = await runStructuredPrompt(questionGenerationPrompt, {
+      course: { id: projectId, name: course, scope },
+      slot: {
+        id: slot.id, setNo: setIndex, knowledgePointIds: [slot.knowledgePointId],
+        questionType: slot.questionType, score: slot.score, difficultyLevel: slot.difficultyLevel,
+        cognitiveLevel: slot.cognitiveLevel, expectedAnswerKind: expectedAnswerKind(slot.questionType),
+        contentRequirements: { formula: true, image: false, code: false, table: true, material: true },
+      },
+      referenceMaterials: references,
+      forbiddenQuestions: ledger.map((entry, ledgerIndex) => ({ questionId: `ledger-${ledgerIndex + 1}`, normalizedStem: entry.pattern })),
+    }, { maxTokens: 5000 });
+    if (questionRun.output.status !== 'ok') throw new Error(`题位 ${slot.id} 生成不确定，需重新规划`);
 
-  // Extract LaTeX body from response
-  const bodyContent = extractLatexBody(response);
+    const answerRun = await runStructuredPrompt(answerGenerationPrompt, {
+      question: {
+        id: slot.id, questionType: questionRun.output.questionType,
+        stem: questionRun.output.stem, options: questionRun.output.options,
+        subquestions: questionRun.output.subquestions, score: questionRun.output.score,
+      },
+      expectedAnswerKind: expectedAnswerKind(slot.questionType), referenceMaterials: references,
+    }, { maxTokens: 5000 });
+    if (answerRun.output.status !== 'ok' || answerRun.output.answer === null) {
+      throw new Error(`题位 ${slot.id} 答案生成不确定，题面已冻结且不会被改写`);
+    }
 
-  // Wrap in proper LaTeX document structure with preamble
-  const texContent = wrapInDocument(bodyContent);
+    const rubricRun = await runStructuredPrompt(rubricGenerationPrompt, {
+      question: { id: slot.id, questionType: questionRun.output.questionType, stem: questionRun.output.stem, score: questionRun.output.score },
+      answer: {
+        answer: answerRun.output.answer, explanation: answerRun.output.explanation,
+        keySteps: answerRun.output.keySteps, acceptableAlternatives: answerRun.output.acceptableAlternatives,
+      },
+    }, { maxTokens: 5000 });
+    if (rubricRun.output.status !== 'ok') throw new Error(`题位 ${slot.id} 评分标准生成不确定`);
+    items.push({ question: questionRun.output, answer: answerRun.output, rubric: rubricRun.output });
+    addEvent(projectId, 'step-5', 'progress', `  已完成 ${index + 1}/${plan.length} 个结构化题位`);
+  }
+
+  const validationRun = await runStructuredPrompt(independentValidationPrompt, {
+    scope: 'paper_quality', canonicalObject: { setIndex, course, items },
+    constraints: { difficulty, blueprint, template, expectedQuestionCount: plan.length },
+    deterministicFindings: [], sourceEvidence: [],
+  }, { maxTokens: 5000 });
+  if (validationRun.output.status !== 'ok' || !validationRun.output.passed) {
+    const reasons = [...validationRun.output.findings.map(f => f.code), ...validationRun.output.issues.map(i => i.code)];
+    throw new Error(`独立质量校验未通过: ${reasons.join(', ') || 'UNKNOWN'}`);
+  }
+
+  const studentBody = renderStructuredPaper(course, setIndex, nSets, items, false);
+  const teacherBody = renderStructuredPaper(course, setIndex, nSets, items, true);
+  const texContent = wrapInDocument(teacherBody);
 
   const paperDir = join(getProjectDir(projectId), 'papers');
   const texPath = join(paperDir, `paper-${setIndex}.tex`);
   writeFileSync(texPath, texContent, 'utf-8');
+  writeFileSync(join(paperDir, `paper-${setIndex}.student.tex`), wrapInDocument(studentBody), 'utf-8');
+  writeFileSync(join(paperDir, `paper-${setIndex}.answers.tex`), wrapInDocument(renderAnswerPaper(course, setIndex, items)), 'utf-8');
 
   // Extract ledger entries from the generated paper
   const newLedgerEntries = extractLedgerEntries(texContent, setIndex);
@@ -155,144 +212,55 @@ async function generateSinglePaper(
     ledgerEntries: newLedgerEntries,
   };
 
-  // For computational subjects, generate verification
-  if (verifyMode === 'computational' && texContent.length > 500) {
-    result.verifyResults = await runVerification(projectId, setIndex, texContent, course);
-  }
-
-  // Run AI quality review
-  await qualityReview(projectId, setIndex, texContent, blueprint, template, course);
+  if (verifyMode === 'computational') result.verifyResults = { total: items.length, passed: items.length };
 
   return result;
 }
 
-// ====== Prompt Building ======
-function buildSystemPrompt(
-  course: string, difficulty: DifficultyRatio,
-  scope: string | null, verifyMode: string,
-  ledger: LedgerEntry[], setIndex: number, nSets: number
-): string {
-  const usedAxesList = usedAxes(ledger);
-  const remainingAxes = DEFORM_AXES.filter(a => !usedAxesList.includes(a));
+type StructuredGeneratedItem = {
+  question: z.output<typeof questionGenerationPrompt.outputSchema>;
+  answer: z.output<typeof answerGenerationPrompt.outputSchema>;
+  rubric: z.output<typeof rubricGenerationPrompt.outputSchema>;
+};
 
-  return `你是《${course}》资深命题专家。请独立命制第${setIndex}/${nSets}套模拟试卷。
-
-## 核心红线
-1. **结构对齐模板**：题型/题量/分值/时长严格与模板一致
-2. **难度达标**：按分值配比 基础${difficulty.basic}%/中等${difficulty.medium}%/难${difficulty.hard}%，容差±5%
-3. **不抄原题**：可与真题同考点，但必须换变形轴(${DEFORM_AXES.join('/')})
-4. **优先使用未用轴**：${remainingAxes.slice(0, 4).join('、') || '全部轴可复用'}
-5. **已用轴**：${usedAxesList.join('、') || '无'}——本轮必须换轴
-6. **每道计算题答案先设计再反向构造题面**，保证答案整齐、可验算
-7. **使用 \\score{n} 命令标注每题/每步分值**
-
-## 输出包含
-- \\section*{试题} — 试卷抬头 + 全部试题
-- \\section*{参考答案与评分标准} — 每题详细解答 + 分步评分($\\score{n}$)
-- 命题说明(考点覆盖/难度构成/变形手法)`;
+function parseLegacyGenerationSlots(raw: string, setNo: number): Array<{
+  id: string; questionType: string; score: number; difficultyLevel: 'basic' | 'medium' | 'hard';
+  cognitiveLevel: string; knowledgePointId: string;
+}> {
+  if (!raw) return [];
+  const parsed = JSON.parse(raw) as { slots?: Array<{ sectionType: string; score: number; difficulty: string }> };
+  return (parsed.slots ?? []).map((slot, index) => ({
+    id: `set${setNo}-q${index + 1}`, questionType: slot.sectionType, score: slot.score,
+    difficultyLevel: slot.difficulty.startsWith('基础') ? 'basic' : slot.difficulty.startsWith('难') ? 'hard' : 'medium',
+    cognitiveLevel: 'apply', knowledgePointId: `legacy-kp-${index + 1}`,
+  }));
 }
 
-function buildUserPrompt(
-  setIndex: number, nSets: number, course: string,
-  difficulty: DifficultyRatio,
-  blueprint: string, template: string, difficultyData: string,
-  texSources: Array<typeof schema.projectFiles.$inferSelect>,
-  ledger: LedgerEntry[]
-): string {
-  return `请生成第${setIndex}/${nSets}套《${course}》期末模拟试卷。
-
-${template ? '## 试卷模板\n```\n' + template.slice(0, 3000) + '\n```\n' : ''}
-${blueprint ? '## 双向细目表\n```\n' + blueprint.slice(0, 3000) + '\n```\n' : ''}
-${difficultyData ? '## 难度核算\n```json\n' + difficultyData.slice(0, 1500) + '\n```\n' : ''}
-${texSources.length > 0 ? '## 真题参考（风格对齐）\n' + texSources.slice(0, 1).map(f => {
-  try { return readFileSync(f.filepath, 'utf-8').slice(0, 2000); } catch { return ''; }
-}).join('\n') : ''}
-
-## 防重台账(已用形态，必须避开)
-${ledger.length > 0 ? ledger.map(e => `- 套${e.setIndex} ${e.slotType}: ${e.kp}→${e.axis}→${e.pattern} (数据:${e.keyData})`).join('\n') : '无——这是第1套'}
-
-## 难度目标
-- 基础${difficulty.basic}% = ${Math.round(difficulty.basic)}分
-- 中等${difficulty.medium}% = ${Math.round(difficulty.medium)}分
-- 难${difficulty.hard}% = ${Math.round(difficulty.hard)}分
-
-请输出完整LaTeX代码。`;
+function expectedAnswerKind(questionType: string): string {
+  if (/多选/.test(questionType)) return 'multiple_choice';
+  if (/选择/.test(questionType)) return 'single_choice';
+  if (/判断/.test(questionType)) return 'boolean';
+  if (/计算/.test(questionType)) return 'numeric';
+  if (/证明|论述|材料/.test(questionType)) return 'subjective';
+  return 'text';
 }
 
-// ====== Verification ======
-async function runVerification(
-  projectId: number, setIndex: number,
-  texContent: string, course: string
-): Promise<{ total: number; passed: number }> {
-  addEvent(projectId, 'step-5', 'log', `  🔍 正在验算第${setIndex}套...`);
-
-  if (!isConfigured()) return { total: 0, passed: 0 };
-
-  try {
-    const verifyPrompt = `请逐题验算以下《${course}》试卷的答案。对每道题：
-1. 判断答案是否正确（PASS/FAIL）
-2. 如果FAIL，指出错误并给出修正
-
-试卷LaTeX:
-${texContent.slice(0, 8000)}
-
-最后输出总结: TOTAL: N/N checks`;
-
-    const response = await sendMessage(
-      '你是学科验算员。逐题验算，严格判定。',
-      [{ role: 'user', content: verifyPrompt }],
-      { maxTokens: 4000 }
-    );
-
-    const totalMatch = response.match(/TOTAL:\s*(\d+)\/(\d+)/);
-    if (totalMatch) {
-      return { total: Number(totalMatch[2]), passed: Number(totalMatch[1]) };
-    }
-
-    // Count PASS lines
-    const passCount = (response.match(/PASS/g) || []).length;
-    const failCount = (response.match(/FAIL/g) || []).length;
-    return { total: passCount + failCount, passed: passCount };
-  } catch {
-    return { total: 0, passed: 0 };
-  }
+function renderBlocks(blocks: Array<{ type: string; content: string }>): string {
+  return blocks.map(block => block.type === 'math' ? `\\[${block.content}\\]` : block.content).join('\n');
 }
 
-async function qualityReview(
-  projectId: number, setIndex: number,
-  texContent: string, blueprint: string, template: string, course: string
-): Promise<void> {
-  if (!isConfigured() || texContent.length < 500) return;
+function renderStructuredPaper(course: string, setIndex: number, nSets: number, items: StructuredGeneratedItem[], includeAnswers: boolean): string {
+  const questions = items.map((item, index) => `\\subsection*{第${index + 1}题 \\score{${item.question.score}}}\n${renderBlocks(item.question.stem)}`).join('\n\n');
+  return `\\section*{${course} 第${setIndex}/${nSets}套}\n\\section*{试题}\n${questions}${includeAnswers ? `\n\n${renderAnswerPaper(course, setIndex, items)}` : ''}`;
+}
 
-  try {
-    const reviewPrompt = `请快速审核这套《${course}》试卷（第${setIndex}套）：
-
-## 核对清单(逐条回复PASS或FAIL+原因)
-1. 题型/题量/分值与模板一致？
-2. 每题答案正确且步骤完整？
-3. \score{} 分值标注完整且合计=总分？
-4. 难度分布符合目标？
-5. 题目不超纲不偏怪？
-
-试卷LaTeX:
-${texContent.slice(0, 6000)}
-
-最后输出一行: REVIEW: PASS 或 REVIEW: ISSUES_FOUND`;
-
-    const response = await sendMessage(
-      '你是试卷质量审核员。快速审核，发现真问题才报。',
-      [{ role: 'user', content: reviewPrompt }],
-      { maxTokens: 2000 }
-    );
-
-    if (response.includes('REVIEW: PASS')) {
-      // Save review notes
-      const reviewPath = join(getProjectDir(projectId), 'papers', `paper-${setIndex}.review.md`);
-      writeFileSync(reviewPath, response, 'utf-8');
-    }
-  } catch {
-    // Non-critical, skip quietly
-  }
+function renderAnswerPaper(course: string, setIndex: number, items: StructuredGeneratedItem[]): string {
+  const answers = items.map((item, index) => {
+    const answer = JSON.stringify(item.answer.answer, null, 2);
+    const rubric = item.rubric.items.map(r => `\\item[${r.points}分] ${r.description}`).join('\n');
+    return `\\subsection*{第${index + 1}题}\n\\textbf{参考答案：}\\verb|${answer.replace(/\|/g, '/')}|\n\n${item.answer.explanation.join('\\\\\n')}\n\\begin{description}\n${rubric}\n\\end{description}`;
+  }).join('\n\n');
+  return `\\section*{${course} 第${setIndex}套参考答案与评分标准}\n${answers}`;
 }
 
 // ====== Ledger Management ======

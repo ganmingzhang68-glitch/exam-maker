@@ -1,7 +1,7 @@
 import { and, eq } from 'drizzle-orm';
 import { db, schema, saveToDisk } from '../db/index.js';
 import { addEvent } from '../controllers/project.js';
-import { isConfigured, sendMessage, getConfig } from './ai.js';
+import { isConfigured, getConfig } from './ai.js';
 import type { DifficultyRatio } from '@exam-maker/shared';
 import { existsSync, readFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join, basename, extname } from 'node:path';
@@ -365,107 +365,6 @@ async function step3ExtractTemplate(projectId: number, project: ProjectRow): Pro
 
   saveToDisk();
   return templatePath;
-}
-
-// ====== Step 5: Generate Papers ======
-async function step5GeneratePapers(
-  projectId: number, project: ProjectRow, difficulty: DifficultyRatio
-): Promise<void> {
-  addEvent(projectId, 'step-5', 'log', `即将生成 ${project.nSets} 套试卷`);
-  addEvent(projectId, 'step-5', 'log', `难度配比: 基础${difficulty.basic}% / 中等${difficulty.medium}% / 难${difficulty.hard}%`);
-
-  if (!isConfigured()) {
-    addEvent(projectId, 'step-5', 'log', '⚠ ANTHROPIC_API_KEY 未设置，无法生成试卷');
-    addEvent(projectId, 'step-5', 'log', '💡 请设置 ANTHROPIC_API_KEY 环境变量后重试');
-    return;
-  }
-
-  const paperDir = join(getProjectDir(projectId), 'papers');
-  if (!existsSync(paperDir)) mkdirSync(paperDir, { recursive: true });
-
-  // Gather context from previous steps
-  const blueprint = readStepFile(projectId, 'blueprint');
-  const template = readStepFile(projectId, 'template');
-  const texSources = db.select().from(schema.projectFiles)
-    .where(and(
-      eq(schema.projectFiles.projectId, projectId),
-      eq(schema.projectFiles.type, 'source_tex'),
-    ))
-    .all();
-
-  for (let i = 1; i <= project.nSets; i++) {
-    addEvent(projectId, 'step-5', 'progress', `正在生成第 ${i}/${project.nSets} 套试卷...`);
-
-    try {
-      const prompt = buildPaperPrompt(project, difficulty, i, blueprint, template, texSources);
-      const result = await sendMessage(prompt, [{ role: 'user', content: `请生成第${i}套试卷` }], { maxTokens: 8000 });
-
-      const paperName = `paper-${i}.tex`;
-      const paperPath = join(paperDir, paperName);
-      writeFileSync(paperPath, result, 'utf-8');
-
-      db.insert(schema.projectFiles).values({
-        projectId,
-        type: 'generated_paper',
-        filename: paperName,
-        filepath: paperPath,
-        metadata: JSON.stringify({ setNumber: i, difficulty }),
-      }).run();
-
-      addEvent(projectId, 'step-5', 'log', `✅ 第${i}套试卷已生成: ${paperName} (${result.length} 字符)`);
-      saveToDisk();
-    } catch (err) {
-      addEvent(projectId, 'step-5', 'error',
-        `第${i}套生成失败: ${err instanceof Error ? err.message : 'Unknown'}`);
-    }
-  }
-}
-
-function buildPaperPrompt(
-  project: ProjectRow, difficulty: DifficultyRatio, setNum: number,
-  blueprint: string, template: string,
-  texSources: Array<typeof schema.projectFiles.$inferSelect>
-): string {
-  let contextPrompt = `你是一位经验丰富的《${project.course}》教师和命题专家。请命制一套期末模拟试卷（第${setNum}/${project.nSets}套）。
-
-## 命题参数
-- 课程: ${project.course}
-- 范围: ${project.scope || '全书'}
-- 难度配比(按分值): 基础${difficulty.basic}% / 中等${difficulty.medium}% / 难${difficulty.hard}%
-- 总分: 100分 · 时长: 120分钟
-- 核验方式: ${project.verifyMode}
-`;
-
-  if (blueprint) {
-    contextPrompt += `\n## 双向细目表（考点与难度分配）\n${blueprint.slice(0, 2000)}\n`;
-  }
-  if (template) {
-    contextPrompt += `\n## 试卷模板（题型与分值结构）\n${template.slice(0, 1500)}\n`;
-  }
-  if (texSources.length > 0) {
-    contextPrompt += `\n## 真题参考（风格对齐，不抄原题）\n`;
-    const sample = texSources.slice(0, 1).map(f => {
-      try { return readFileSync(f.filepath, 'utf-8').slice(0, 2000); }
-      catch { return ''; }
-    }).join('\n');
-    contextPrompt += sample;
-  }
-
-  contextPrompt += `
-
-## 输出要求
-1. LaTeX 格式，包含试卷抬头（课程名、学期、考试说明、总分、时长）
-2. 试题部分：每题后标注 \`\\score{n}\`
-3. 参考答案与**分步评分标准**
-4. 命题说明（考点覆盖、难度构成）
-
-## 质量红线
-- 结构对齐模板，分值合计准确
-- 难度按分值配比，不超纲不偏怪
-- 计算题答案整齐、可验算
-- 与真题同考点不同形态（换数据/换情境/换设问角度）`;
-
-  return contextPrompt;
 }
 
 // ====== Helpers ======
