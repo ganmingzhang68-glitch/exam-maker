@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const dataDir = join(__dirname, '..', '..', 'data');
 const dbPath = join(dataDir, 'exam-maker.db');
+let activeDbPath: string | null = dbPath;
 
 if (!existsSync(dataDir)) {
   mkdirSync(dataDir, { recursive: true });
@@ -19,9 +20,9 @@ export let db: SQLJsDatabase<typeof schema>;
 export let rawDb: SqlJsDatabase;
 
 function saveToDisk() {
-  if (database) {
+  if (database && activeDbPath) {
     const buffer = database.export();
-    writeFileSync(dbPath, Buffer.from(buffer));
+    writeFileSync(activeDbPath, Buffer.from(buffer));
   }
 }
 
@@ -34,11 +35,12 @@ process.on('exit', saveToDisk);
 process.on('SIGINT', () => { saveToDisk(); process.exit(); });
 process.on('SIGTERM', () => { saveToDisk(); process.exit(); });
 
-export async function initDb(): Promise<void> {
+export async function initDb(options?: { filePath?: string | null }): Promise<void> {
   const sqlJs = await initSqlJs();
+  activeDbPath = options && 'filePath' in options ? options.filePath ?? null : dbPath;
 
-  if (existsSync(dbPath)) {
-    const buffer = readFileSync(dbPath);
+  if (activeDbPath && existsSync(activeDbPath)) {
+    const buffer = readFileSync(activeDbPath);
     database = new sqlJs.Database(buffer);
   } else {
     database = new sqlJs.Database();

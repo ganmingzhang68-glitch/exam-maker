@@ -1,7 +1,8 @@
 import type { NextFunction, Response } from 'express';
-import { and, desc, eq } from 'drizzle-orm';
+import { and, asc, count, desc, eq } from 'drizzle-orm';
 import {
-  createQuestionSchema, positiveIdSchema, questionListQuerySchema, updateQuestionSchema,
+  createQuestionSchema, positiveIdSchema, questionListQuerySchema, reviewQuestionSchema,
+  updateQuestionSchema,
 } from '@exam-maker/shared';
 import { db, saveToDisk, schema } from '../db/index.js';
 import { AppError } from '../middleware/errorHandler.js';
@@ -14,7 +15,10 @@ function parseJson<T>(value: string | null): T | null {
   try { return JSON.parse(value) as T; } catch { return null; }
 }
 
-function serializeQuestion(row: QuestionRow) {
+function serializeQuestion(
+  row: QuestionRow,
+  source?: { sourceFileName: string | null; sourceProjectTitle: string | null },
+) {
   return {
     ...row,
     options: parseJson<string[]>(row.options),
@@ -22,6 +26,7 @@ function serializeQuestion(row: QuestionRow) {
     scoringRubric: parseJson<Record<string, unknown>>(row.scoringRubric),
     knowledgePoints: parseJson<string[]>(row.knowledgePoints),
     metadata: parseJson<Record<string, unknown>>(row.metadata),
+    ...(source ?? {}),
   };
 }
 
@@ -49,10 +54,16 @@ function assertSourceOwnership(
   }
 
   if (sourceFileId) {
-    const file = db.select({ id: schema.projectFiles.id }).from(schema.projectFiles)
+    const file = db.select({
+      id: schema.projectFiles.id,
+      projectId: schema.projectFiles.projectId,
+    }).from(schema.projectFiles)
       .innerJoin(schema.projects, eq(schema.projectFiles.projectId, schema.projects.id))
       .where(and(eq(schema.projectFiles.id, sourceFileId), eq(schema.projects.userId, req.userId!))).get();
     if (!file) throw new AppError(400, '来源文件不存在或无权访问');
+    if (sourceProjectId && file.projectId !== sourceProjectId) {
+      throw new AppError(400, '来源文件不属于所选来源项目');
+    }
   }
 }
 
@@ -63,15 +74,56 @@ export function listQuestions(req: AuthRequest, res: Response, next: NextFunctio
     if (req.userRole !== 'admin') conditions.push(eq(schema.questions.createdBy, req.userId!));
     if (query.status) conditions.push(eq(schema.questions.status, query.status));
     if (query.type) conditions.push(eq(schema.questions.type, query.type));
+    if (query.difficulty) conditions.push(eq(schema.questions.difficulty, query.difficulty));
+    if (query.sourceFileId) conditions.push(eq(schema.questions.sourceFileId, query.sourceFileId));
     if (query.sourceProjectId) conditions.push(eq(schema.questions.sourceProjectId, query.sourceProjectId));
 
-    const rows = db.select().from(schema.questions)
+    const rows = db.select({
+      question: schema.questions,
+      sourceFileName: schema.projectFiles.filename,
+      sourceProjectTitle: schema.projects.title,
+    }).from(schema.questions)
+      .leftJoin(schema.projectFiles, eq(schema.questions.sourceFileId, schema.projectFiles.id))
+      .leftJoin(schema.projects, eq(schema.questions.sourceProjectId, schema.projects.id))
       .where(conditions.length ? and(...conditions) : undefined)
       .orderBy(desc(schema.questions.updatedAt))
       .limit(query.limit)
       .offset(query.offset)
       .all();
-    res.json({ success: true, data: rows.map(serializeQuestion) });
+    res.json({
+      success: true,
+      data: rows.map((row) => serializeQuestion(row.question, {
+        sourceFileName: row.sourceFileName,
+        sourceProjectTitle: row.sourceProjectTitle,
+      })),
+    });
+  } catch (error) { next(error); }
+}
+
+export function listQuestionSources(req: AuthRequest, res: Response, next: NextFunction) {
+  try {
+    const conditions = req.userRole === 'admin'
+      ? undefined
+      : eq(schema.questions.createdBy, req.userId!);
+    const rows = db.select({
+      id: schema.projectFiles.id,
+      projectId: schema.projectFiles.projectId,
+      filename: schema.projectFiles.filename,
+      projectTitle: schema.projects.title,
+      questionCount: count(schema.questions.id),
+    }).from(schema.questions)
+      .innerJoin(schema.projectFiles, eq(schema.questions.sourceFileId, schema.projectFiles.id))
+      .innerJoin(schema.projects, eq(schema.projectFiles.projectId, schema.projects.id))
+      .where(conditions)
+      .groupBy(
+        schema.projectFiles.id,
+        schema.projectFiles.projectId,
+        schema.projectFiles.filename,
+        schema.projects.title,
+      )
+      .orderBy(asc(schema.projects.title), asc(schema.projectFiles.filename))
+      .all();
+    res.json({ success: true, data: rows });
   } catch (error) { next(error); }
 }
 
@@ -127,6 +179,20 @@ export function updateQuestion(req: AuthRequest, res: Response, next: NextFuncti
     };
     const row = db.update(schema.questions).set(values)
       .where(eq(schema.questions.id, existing.id)).returning().get();
+    saveToDisk();
+    res.json({ success: true, data: serializeQuestion(row) });
+  } catch (error) { next(error); }
+}
+
+export function reviewQuestion(req: AuthRequest, res: Response, next: NextFunction) {
+  try {
+    const id = positiveIdSchema.parse(req.params.id);
+    const existing = getOwnedQuestion(req, id);
+    const data = reviewQuestionSchema.parse(req.body);
+    const row = db.update(schema.questions).set({
+      status: data.status,
+      updatedAt: new Date().toISOString(),
+    }).where(eq(schema.questions.id, existing.id)).returning().get();
     saveToDisk();
     res.json({ success: true, data: serializeQuestion(row) });
   } catch (error) { next(error); }

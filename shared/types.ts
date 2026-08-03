@@ -165,6 +165,19 @@ export interface Question {
   updatedAt: string;
 }
 
+export interface QuestionListItem extends Question {
+  sourceFileName: string | null;
+  sourceProjectTitle: string | null;
+}
+
+export interface QuestionSource {
+  id: number;
+  projectId: number;
+  filename: string;
+  projectTitle: string;
+  questionCount: number;
+}
+
 export type PaperStatus = 'draft' | 'ready' | 'archived';
 export interface Paper {
   id: number;
@@ -190,6 +203,14 @@ export interface PaperQuestion {
   score: number;
   questionSnapshot: Record<string, unknown> | null;
   createdAt: string;
+}
+
+export interface PaperQuestionDetail extends PaperQuestion {
+  question: Question;
+}
+
+export interface PaperDetail extends Paper {
+  questions: PaperQuestionDetail[];
 }
 
 export type ExamStatus = 'draft' | 'published' | 'closed';

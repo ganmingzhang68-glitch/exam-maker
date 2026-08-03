@@ -14,6 +14,7 @@ import authRoutes from './routes/auth.js';
 import projectRoutes from './routes/project.js';
 import questionRoutes from './routes/question.js';
 import examRoutes from './routes/exam.js';
+import paperRoutes from './routes/paper.js';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -33,6 +34,7 @@ app.get('/api/health', (_req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/projects', projectRoutes);
 app.use('/api/questions', questionRoutes);
+app.use('/api/papers', paperRoutes);
 app.use('/api/exams', examRoutes);
 
 // Error handler (must be last)

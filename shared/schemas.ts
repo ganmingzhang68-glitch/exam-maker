@@ -76,9 +76,52 @@ export const updateQuestionSchema = questionFieldsSchema.partial().superRefine((
 export const questionListQuerySchema = z.object({
   status: questionStatusSchema.optional(),
   type: questionTypeSchema.optional(),
+  difficulty: difficultyLevelSchema.optional(),
+  sourceFileId: z.coerce.number().int().positive().optional(),
   sourceProjectId: z.coerce.number().int().positive().optional(),
   limit: z.coerce.number().int().min(1).max(100).default(20),
   offset: z.coerce.number().int().min(0).default(0),
 });
 
 export const positiveIdSchema = z.coerce.number().int().positive();
+
+export const reviewQuestionSchema = z.object({
+  status: z.enum(['reviewed', 'rejected']),
+});
+
+export const paperStatusSchema = z.enum(['draft', 'ready', 'archived']);
+
+export const createPaperSchema = z.object({
+  title: z.string().trim().min(1, '试卷标题不能为空').max(200),
+  course: z.string().trim().min(1, '课程名称不能为空').max(200),
+  description: z.string().trim().max(5000).nullable().optional(),
+  instructions: z.string().trim().max(10000).nullable().optional(),
+  durationMinutes: z.number().int().min(1).max(1440).default(120),
+  status: paperStatusSchema.default('draft'),
+  sourceProjectId: z.number().int().positive().nullable().optional(),
+});
+
+export const updatePaperSchema = createPaperSchema.partial();
+
+export const paperListQuerySchema = z.object({
+  status: paperStatusSchema.optional(),
+});
+
+export const addPaperQuestionSchema = z.object({
+  questionId: z.number().int().positive(),
+  score: z.number().min(0).max(1000).optional(),
+  sectionTitle: z.string().trim().max(200).nullable().optional(),
+});
+
+export const updatePaperQuestionSchema = z.object({
+  score: z.number().min(0).max(1000).optional(),
+  sectionTitle: z.string().trim().max(200).nullable().optional(),
+}).refine((value) => Object.keys(value).length > 0, '至少提供一个要修改的字段');
+
+export const reorderPaperQuestionsSchema = z.object({
+  paperQuestionIds: z.array(z.number().int().positive()).max(1000),
+}).superRefine((value, ctx) => {
+  if (new Set(value.paperQuestionIds).size !== value.paperQuestionIds.length) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['paperQuestionIds'], message: '题目顺序中不能包含重复项' });
+  }
+});
