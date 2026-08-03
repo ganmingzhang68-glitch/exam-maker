@@ -8,6 +8,10 @@ import Register from './pages/auth/Register';
 import ProjectList from './pages/ProjectList';
 import ProjectNew from './pages/ProjectNew';
 import ProjectWorkspace from './pages/ProjectWorkspace';
+import QuestionBank from './pages/QuestionBank';
+import QuestionEdit from './pages/QuestionEdit';
+import PaperList from './pages/PaperList';
+import PaperEdit from './pages/PaperEdit';
 import NotFound from './pages/NotFound';
 
 const App: React.FC = () => {
@@ -26,7 +30,7 @@ const App: React.FC = () => {
       {/* Protected — with sidebar layout */}
       <Route
         element={
-          <ProtectedRoute>
+          <ProtectedRoute allowedRoles={['teacher', 'admin']}>
             <AppLayout />
           </ProtectedRoute>
         }
@@ -34,6 +38,11 @@ const App: React.FC = () => {
         <Route path="/" element={<ProjectList />} />
         <Route path="/projects/new" element={<ProjectNew />} />
         <Route path="/projects/:id" element={<ProjectWorkspace />} />
+        <Route path="/questions" element={<QuestionBank />} />
+        <Route path="/questions/review" element={<QuestionBank reviewMode />} />
+        <Route path="/questions/:id/edit" element={<QuestionEdit />} />
+        <Route path="/papers" element={<PaperList />} />
+        <Route path="/papers/:id" element={<PaperEdit />} />
       </Route>
 
       <Route path="/404" element={<NotFound />} />

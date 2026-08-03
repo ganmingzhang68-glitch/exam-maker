@@ -8,6 +8,9 @@ import {
   UserOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
+  DatabaseOutlined,
+  AuditOutlined,
+  FileDoneOutlined,
 } from '@ant-design/icons';
 import { useAuthStore } from '../store/authStore';
 
@@ -23,7 +26,20 @@ const AppLayout: React.FC = () => {
   const menuItems = [
     { key: '/', icon: <ProjectOutlined />, label: '出卷项目' },
     { key: '/projects/new', icon: <PlusOutlined />, label: '新建项目' },
+    { key: '/questions/review', icon: <AuditOutlined />, label: 'AI 题目审核' },
+    { key: '/questions', icon: <DatabaseOutlined />, label: '教师题库' },
+    { key: '/papers', icon: <FileDoneOutlined />, label: '试卷管理' },
   ];
+
+  const selectedMenuKey = location.pathname.startsWith('/questions/review')
+    ? '/questions/review'
+    : location.pathname.startsWith('/questions/') || location.pathname === '/questions'
+      ? '/questions'
+      : location.pathname.startsWith('/papers')
+        ? '/papers'
+        : location.pathname.startsWith('/projects/new')
+          ? '/projects/new'
+          : '/';
 
   const userMenuItems = [
     { key: 'logout', icon: <LogoutOutlined />, label: '退出登录', danger: true },
@@ -63,7 +79,7 @@ const AppLayout: React.FC = () => {
         </div>
         <Menu
           mode="inline"
-          selectedKeys={[location.pathname]}
+          selectedKeys={[selectedMenuKey]}
           items={menuItems}
           onClick={({ key }) => navigate(key)}
           style={{ borderRight: 0, marginTop: 8 }}
