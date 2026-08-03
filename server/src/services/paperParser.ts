@@ -147,19 +147,27 @@ async function parsePdf(
 ): Promise<string> {
   // Try pdf-parse first for text extraction
   try {
-    const pdfParse = await import('pdf-parse');
+    const { PDFParse } = await import('pdf-parse');
     const dataBuffer = readFileSync(file.filepath);
-    const pdfData = await pdfParse.default(dataBuffer);
+    const parser = new PDFParse({ data: new Uint8Array(dataBuffer) });
+    const pdfData = await parser.getText();
 
-    const extractedText = pdfData.text;
-    warnings.push(`PDF 文本提取: ${pdfData.numpages} 页, ${extractedText.length} 字符`);
+    const extractedText = pdfData?.text || '';
+    const pageCount = Array.isArray(pdfData?.pages) ? pdfData.pages.length : (pdfData?.total ?? '?');
+    warnings.push(`PDF 文本提取: ${pageCount} 页, ${extractedText.length} 字符`);
 
     if (extractedText.trim().length < 50) {
       warnings.push('PDF 文本内容极少，可能是扫描件/图片PDF，将使用AI视觉识读');
       // Fall through to AI approach
     } else if (isConfigured() && options.useAI !== false) {
       // Use Claude to structure extracted text into proper LaTeX
-      return await convertToLatex(extractedText, file.filename, 'pdf-extracted');
+      const converted = await convertToLatex(extractedText, file.filename, 'pdf-extracted');
+      if (converted && converted.trim().length > 0) {
+        return converted;
+      }
+      // AI returned empty — fall back to raw extracted text
+      warnings.push('AI 转换返回空，使用原始提取文本');
+      return wrapInLatex(extractedText, file.filename);
     } else {
       // No AI, return raw text wrapped minimally
       return wrapInLatex(extractedText, file.filename);

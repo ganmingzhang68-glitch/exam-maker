@@ -4,7 +4,7 @@ import { db, schema, saveToDisk } from '../db/index.js';
 import { addEvent } from '../controllers/project.js';
 import { getProjectDir } from './workflow.js';
 import { isConfigured, sendMessage } from './ai.js';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import type { DifficultyRatio } from '@exam-maker/shared';
 
 interface LedgerEntry {
@@ -43,8 +43,10 @@ export async function generatePapers(
   const template = readStepFile(projectId, 'template');
   const difficultyData = readFileIfExists(join(dir, 'difficulty.json'));
   const texSources = db.select().from(schema.projectFiles)
-    .where(eq(schema.projectFiles.projectId, projectId))
-    .where(eq(schema.projectFiles.type, 'source_tex'))
+    .where(and(
+      eq(schema.projectFiles.projectId, projectId),
+      eq(schema.projectFiles.type, 'source_tex'),
+    ))
     .all();
 
   // Load ledger or create new
@@ -425,8 +427,10 @@ function wrapInDocument(body: string): string {
 
 function readStepFile(projectId: number, type: string): string {
   const files = db.select().from(schema.projectFiles)
-    .where(eq(schema.projectFiles.projectId, projectId))
-    .where(eq(schema.projectFiles.type, type))
+    .where(and(
+      eq(schema.projectFiles.projectId, projectId),
+      eq(schema.projectFiles.type, type),
+    ))
     .all();
 
   return files.map(f => {

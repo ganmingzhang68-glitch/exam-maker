@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { db, schema, saveToDisk } from '../db/index.js';
 import { addEvent } from '../controllers/project.js';
 import { isConfigured, sendMessage, getConfig } from './ai.js';
@@ -200,8 +200,10 @@ async function step0DetectEnv(projectId: number): Promise<void> {
 // ====== Step 1: Parse Past Papers → LaTeX ======
 async function step1ParsePapers(projectId: number): Promise<void> {
   const pastPapers = db.select().from(schema.projectFiles)
-    .where(eq(schema.projectFiles.projectId, projectId))
-    .where(eq(schema.projectFiles.type, 'past_paper'))
+    .where(and(
+      eq(schema.projectFiles.projectId, projectId),
+      eq(schema.projectFiles.type, 'past_paper'),
+    ))
     .all();
 
   if (pastPapers.length === 0) {
@@ -385,8 +387,10 @@ async function step5GeneratePapers(
   const blueprint = readStepFile(projectId, 'blueprint');
   const template = readStepFile(projectId, 'template');
   const texSources = db.select().from(schema.projectFiles)
-    .where(eq(schema.projectFiles.projectId, projectId))
-    .where(eq(schema.projectFiles.type, 'source_tex'))
+    .where(and(
+      eq(schema.projectFiles.projectId, projectId),
+      eq(schema.projectFiles.type, 'source_tex'),
+    ))
     .all();
 
   for (let i = 1; i <= project.nSets; i++) {
@@ -478,8 +482,10 @@ export function getProjectDir(projectId: number): string {
 
 function readStepFile(projectId: number, type: string): string {
   const files = db.select().from(schema.projectFiles)
-    .where(eq(schema.projectFiles.projectId, projectId))
-    .where(eq(schema.projectFiles.type, type))
+    .where(and(
+      eq(schema.projectFiles.projectId, projectId),
+      eq(schema.projectFiles.type, type),
+    ))
     .all();
 
   if (files.length === 0) return '';
