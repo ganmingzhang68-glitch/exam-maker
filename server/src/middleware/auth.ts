@@ -2,15 +2,16 @@ import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { db, schema } from '../db/index.js';
 import { eq } from 'drizzle-orm';
+import type { UserRole } from '@exam-maker/shared';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'exam-maker-secret-dev';
 
 export interface AuthRequest extends Request {
   userId?: number;
-  userRole?: string;
+  userRole?: UserRole;
 }
 
-export function generateToken(userId: number, role: string): string {
+export function generateToken(userId: number, role: UserRole): string {
   return jwt.sign({ userId, role }, JWT_SECRET, { expiresIn: '7d' });
 }
 
@@ -26,7 +27,7 @@ export function authMiddleware(req: AuthRequest, _res: Response, next: NextFunct
 
   if (token) {
     try {
-      const payload = jwt.verify(token, JWT_SECRET) as { userId: number; role: string };
+      const payload = jwt.verify(token, JWT_SECRET) as { userId: number; role: UserRole };
       req.userId = payload.userId;
       req.userRole = payload.role;
     } catch {
@@ -43,7 +44,7 @@ export function requireAuth(req: AuthRequest, res: Response, next: NextFunction)
   return next();
 }
 
-export function requireRole(...roles: string[]) {
+export function requireRole(...roles: UserRole[]) {
   return (req: AuthRequest, res: Response, next: NextFunction) => {
     if (!req.userRole || !roles.includes(req.userRole)) {
       return res.status(403).json({ success: false, error: '权限不足' });

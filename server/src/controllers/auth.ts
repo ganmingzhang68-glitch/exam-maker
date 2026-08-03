@@ -33,7 +33,7 @@ export async function register(req: Request, res: Response, next: NextFunction) 
         username: data.username,
         email: data.email,
         passwordHash,
-        role: data.role || 'student',
+        role: 'student',
       })
       .returning()
       .get();

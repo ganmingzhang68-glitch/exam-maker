@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { requireAuth } from '../middleware/auth.js';
+import { requireAuth, requireRole } from '../middleware/auth.js';
 import {
   listProjects, getProject, createProject, deleteProject,
   updateCheckpoint, startProjectWorkflow, getEnvironment, getBlueprint, getTemplate, streamEvents,
@@ -9,7 +9,7 @@ import { uploadPastPapers, handleUpload, getFile, downloadFile } from '../contro
 const router = Router();
 
 // All routes require auth
-router.use(requireAuth);
+router.use(requireAuth, requireRole('teacher', 'admin'));
 
 // Environment detection (no project needed)
 router.get('/env', getEnvironment);

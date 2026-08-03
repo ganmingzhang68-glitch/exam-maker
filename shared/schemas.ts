@@ -34,3 +34,51 @@ export const checkpointActionSchema = z.object({
   action: z.enum(['approve', 'reject']),
   notes: z.string().optional(),
 });
+
+// ============ Exam MVP foundation ============
+export const questionTypeSchema = z.enum([
+  'single_choice', 'multiple_choice', 'true_false', 'fill_blank',
+  'short_answer', 'calculation', 'essay',
+]);
+export const questionStatusSchema = z.enum(['generated', 'reviewed', 'rejected']);
+export const difficultyLevelSchema = z.enum(['basic', 'medium', 'hard']);
+
+const questionFieldsSchema = z.object({
+  type: questionTypeSchema,
+  stem: z.string().trim().min(1, '题干不能为空').max(50000),
+  options: z.array(z.string().max(10000)).max(20).nullable().optional(),
+  answerKey: z.record(z.unknown()).nullable().optional(),
+  analysis: z.string().max(50000).nullable().optional(),
+  scoringRubric: z.record(z.unknown()).nullable().optional(),
+  defaultScore: z.number().min(0).max(1000).default(0),
+  difficulty: difficultyLevelSchema.nullable().optional(),
+  knowledgePoints: z.array(z.string().trim().min(1).max(100)).max(50).nullable().optional(),
+  status: questionStatusSchema.default('generated'),
+  sourceFileId: z.number().int().positive().nullable().optional(),
+  sourceProjectId: z.number().int().positive().nullable().optional(),
+  sourceQuestionNo: z.string().trim().max(100).nullable().optional(),
+  metadata: z.record(z.unknown()).nullable().optional(),
+});
+
+export const createQuestionSchema = questionFieldsSchema.superRefine((value, ctx) => {
+  if ((value.type === 'single_choice' || value.type === 'multiple_choice') &&
+      (!value.options || value.options.length < 2)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['options'], message: '选择题至少需要两个选项' });
+  }
+});
+
+export const updateQuestionSchema = questionFieldsSchema.partial().superRefine((value, ctx) => {
+  if (value.stem !== undefined && value.stem.trim().length === 0) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['stem'], message: '题干不能为空' });
+  }
+});
+
+export const questionListQuerySchema = z.object({
+  status: questionStatusSchema.optional(),
+  type: questionTypeSchema.optional(),
+  sourceProjectId: z.coerce.number().int().positive().optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+  offset: z.coerce.number().int().min(0).default(0),
+});
+
+export const positiveIdSchema = z.coerce.number().int().positive();
