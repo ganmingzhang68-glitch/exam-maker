@@ -3,11 +3,15 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
+    "predev": "npm run build -w @exam-maker/shared",
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
+    "pretest": "npm run build -w @exam-maker/shared",
+    "test": "tsx --test test/*.test.ts",
     "start": "node dist/index.js",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "tsx src/db/migrate.ts"
+    "db:migrate": "tsx src/db/runMigrations.ts",
+    "db:seed": "tsx src/seed.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.30.0",

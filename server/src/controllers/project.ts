@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { eq, desc } from 'drizzle-orm';
+import { and, eq, desc } from 'drizzle-orm';
 import { db, schema, rawDb, saveToDisk } from '../db/index.js';
 import { createProjectSchema, checkpointActionSchema } from '@exam-maker/shared';
 import { AppError } from '../middleware/errorHandler.js';
@@ -146,8 +146,10 @@ export function updateCheckpoint(req: AuthRequest, res: Response, next: NextFunc
     if (!project || project.userId !== req.userId) throw new AppError(403, '无权访问');
 
     const checkpoint = db.select().from(schema.checkpoints)
-      .where(eq(schema.checkpoints.projectId, projectId))
-      .where(eq(schema.checkpoints.step, step))
+      .where(and(
+        eq(schema.checkpoints.projectId, projectId),
+        eq(schema.checkpoints.step, step),
+      ))
       .get();
 
     if (!checkpoint) throw new AppError(404, '检查点不存在');
@@ -307,11 +309,6 @@ export function streamEvents(req: AuthRequest, res: Response, next: NextFunction
 }
 
 // ====== Helpers ======
-export function getProjectDir(projectId: number): string {
-  const projectDir = join(process.cwd(), 'data', 'projects', String(projectId));
-  return projectDir;
-}
-
 function stepLabel(step: string): string {
   const map: Record<string, string> = { blueprint: '双向细目表', template: '试卷模板', selection: '选卷' };
   return map[step] || step;

@@ -81,8 +81,10 @@ export async function analyzeBlueprint(
 
   // Collect parsed tex files
   const texFiles = db.select().from(schema.projectFiles)
-    .where(eq(schema.projectFiles.projectId, projectId))
-    .where(eq(schema.projectFiles.type, 'source_tex'))
+    .where(and(
+      eq(schema.projectFiles.projectId, projectId),
+      eq(schema.projectFiles.type, 'source_tex'),
+    ))
     .all();
 
   if (texFiles.length === 0) {
@@ -390,8 +392,10 @@ function saveBlueprintOutputs(projectId: number, result: BlueprintResult): void 
     { filepath: mdPath, filename: 'blueprint.md', type: 'blueprint' },
   ]) {
     const existing = db.select().from(schema.projectFiles)
-      .where(eq(schema.projectFiles.projectId, projectId))
-      .where(eq(schema.projectFiles.filename, filename))
+      .where(and(
+        eq(schema.projectFiles.projectId, projectId),
+        eq(schema.projectFiles.filename, filename),
+      ))
       .get();
 
     if (existing) {
@@ -612,7 +616,7 @@ function heuristicAnalysis(texFiles: Array<typeof schema.projectFiles.$inferSele
 }
 
 // ====== JSONL Parser ======
-function parseJsonl<T extends Record<string, unknown>>(
+function parseJsonl<T extends object>(
   text: string,
   requiredFields: string[]
 ): T[] {
@@ -652,7 +656,7 @@ function parseJsonl<T extends Record<string, unknown>>(
 }
 
 // Re-export for use in workflow
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 
 function getProjectDir(projectId: number): string {
   return join(process.cwd(), 'data', 'projects', String(projectId));

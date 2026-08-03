@@ -4,7 +4,7 @@ import { db, schema, saveToDisk } from '../db/index.js';
 import { addEvent } from '../controllers/project.js';
 import { isConfigured, sendMessage } from './ai.js';
 import { getProjectDir } from './workflow.js';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 
 // ====== Types ======
 export interface TemplateSection {
@@ -32,8 +32,10 @@ export async function analyzeTemplate(
   course: string
 ): Promise<TemplateResult> {
   const texFiles = db.select().from(schema.projectFiles)
-    .where(eq(schema.projectFiles.projectId, projectId))
-    .where(eq(schema.projectFiles.type, 'source_tex'))
+    .where(and(
+      eq(schema.projectFiles.projectId, projectId),
+      eq(schema.projectFiles.type, 'source_tex'),
+    ))
     .all();
 
   if (texFiles.length === 0) {
@@ -320,8 +322,10 @@ export function saveTemplateOutputs(projectId: number, result: TemplateResult): 
     { filepath: mdPath, filename: 'template.md' },
   ]) {
     const existing = db.select().from(schema.projectFiles)
-      .where(eq(schema.projectFiles.projectId, projectId))
-      .where(eq(schema.projectFiles.filename, filename))
+      .where(and(
+        eq(schema.projectFiles.projectId, projectId),
+        eq(schema.projectFiles.filename, filename),
+      ))
       .get();
 
     if (existing) {

@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { db, schema, saveToDisk } from '../db/index.js';
 import { addEvent } from '../controllers/project.js';
 import { getProjectDir } from './workflow.js';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import type { DifficultyRatio } from '@exam-maker/shared';
 import { isConfigured, sendMessage } from './ai.js';
 
@@ -116,7 +116,7 @@ function buildSlots(
   let questionCounter = 0;
   let bpIdx = 0;
 
-  for (const section of template.sections) {
+  for (const [sectionIndex, section] of template.sections.entries()) {
     for (let q = 1; q <= section.count; q++) {
       questionCounter++;
       // Try to get difficulty from blueprint if available
@@ -138,7 +138,7 @@ function buildSlots(
       } else {
         slots.push({
           sectionType: section.type,
-          sectionIndex: section.sections ? section.sections.indexOf(section) : 0,
+          sectionIndex,
           questionIndex: q,
           score: section.pointsPerQuestion,
           difficulty,
@@ -222,7 +222,7 @@ function computeAssignment(
 async function tryAdjustWithAI(
   result: DifficultyAssignment,
   target: DifficultyRatio,
-  template: { sections: Array<{ type: string; count: number; pointsPerQuestion: number }>; totalScore: number },
+  template: { sections: Array<{ type: string; count: number; pointsPerQuestion: number; subtotal: number }>; totalScore: number },
   projectId: number
 ): Promise<Partial<DifficultyAssignment> | null> {
   if (!isConfigured()) {
@@ -364,8 +364,10 @@ function saveAssignmentOutputs(
   // Record file
   const diffPath = join(dir, 'difficulty.json');
   const existing = db.select().from(schema.projectFiles)
-    .where(eq(schema.projectFiles.projectId, projectId))
-    .where(eq(schema.projectFiles.filename, 'difficulty.json'))
+    .where(and(
+      eq(schema.projectFiles.projectId, projectId),
+      eq(schema.projectFiles.filename, 'difficulty.json'),
+    ))
     .get();
 
   if (!existing) {
