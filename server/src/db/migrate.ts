@@ -4,6 +4,7 @@ import { initialMigration } from './migrations/001_initial.js';
 import { examMvpFoundationMigration } from './migrations/002_exam_mvp_foundation.js';
 import { examDeliveryMigration } from './migrations/003_exam_delivery.js';
 import { gradingConfigMigration } from './migrations/004_grading_config.js';
+import { questionGenerationDomainMigration } from './migrations/005_question_generation_domain.js';
 
 interface Migration {
   id: string;
@@ -15,6 +16,7 @@ const migrations: Migration[] = [
   examMvpFoundationMigration,
   examDeliveryMigration,
   gradingConfigMigration,
+  questionGenerationDomainMigration,
 ];
 
 export function runMigrations(database: Database = rawDb): void {

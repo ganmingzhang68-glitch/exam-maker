@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, real, index, uniqueIndex } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, integer, real, index, uniqueIndex, type AnySQLiteColumn } from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
 
 export const users = sqliteTable('users', {
@@ -9,6 +9,20 @@ export const users = sqliteTable('users', {
   role: text('role', { enum: ['teacher', 'student', 'admin'] }).notNull().default('student'),
   createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
 });
+
+export const courses = sqliteTable('courses', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  ownerUserId: integer('owner_user_id').notNull().references(() => users.id),
+  code: text('code'),
+  name: text('name').notNull(),
+  description: text('description'),
+  materialDocumentIds: text('material_document_ids').notNull().default('[]'),
+  status: text('status').notNull().default('draft'),
+  createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
+  updatedAt: text('updated_at').notNull().default(sql`(datetime('now'))`),
+}, (table) => ({
+  ownerNameUnique: uniqueIndex('courses_owner_name_unique').on(table.ownerUserId, table.name),
+}));
 
 export const projects = sqliteTable('projects', {
   id: integer('id').primaryKey({ autoIncrement: true }),
@@ -21,6 +35,7 @@ export const projects = sqliteTable('projects', {
   verifyMode: text('verify_mode', { enum: ['auto', 'computational', 'conceptual', 'mixed'] }).notNull().default('auto'),
   status: text('status').notNull().default('drafting'),
   userId: integer('user_id').notNull().references(() => users.id),
+  courseId: integer('course_id').references(() => courses.id, { onDelete: 'set null' }),
   createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
   updatedAt: text('updated_at').notNull().default(sql`(datetime('now'))`),
 });
@@ -54,6 +69,428 @@ export const jobEvents = sqliteTable('job_events', {
   data: text('data'),
   createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
 });
+
+export const promptVersions = sqliteTable('prompt_versions', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  key: text('key').notNull(),
+  version: text('version').notNull(),
+  stage: text('stage').notNull(),
+  template: text('template').notNull(),
+  inputSchemaVersion: text('input_schema_version').notNull(),
+  outputSchemaVersion: text('output_schema_version').notNull(),
+  sha256: text('sha256').notNull(),
+  createdBy: integer('created_by').references(() => users.id, { onDelete: 'set null' }),
+  notes: text('notes'),
+  status: text('status').notNull().default('draft'),
+  createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
+  updatedAt: text('updated_at').notNull().default(sql`(datetime('now'))`),
+}, (table) => ({
+  keyVersionUnique: uniqueIndex('prompt_versions_key_version_unique').on(table.key, table.version),
+}));
+
+export const generationJobs = sqliteTable('generation_jobs', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  projectId: integer('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  courseId: integer('course_id').notNull().references(() => courses.id),
+  requestedBy: integer('requested_by').notNull().references(() => users.id),
+  pipelineVersion: text('pipeline_version').notNull(),
+  currentStage: text('current_stage'),
+  lastSuccessfulStage: text('last_successful_stage'),
+  numberOfSets: integer('number_of_sets').notNull().default(1),
+  errorSummary: text('error_summary'),
+  status: text('status').notNull().default('pending'),
+  createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
+  updatedAt: text('updated_at').notNull().default(sql`(datetime('now'))`),
+}, (table) => ({
+  projectStatusIdx: index('generation_jobs_project_status_idx').on(table.projectId, table.status),
+}));
+
+export const generationJobStages = sqliteTable('generation_job_stages', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  generationJobId: integer('generation_job_id').notNull().references(() => generationJobs.id, { onDelete: 'cascade' }),
+  stage: text('stage').notNull(),
+  attemptNo: integer('attempt_no').notNull().default(1),
+  inputJson: text('input_json').notNull().default('{}'),
+  outputJson: text('output_json'),
+  inputArtifactId: integer('input_artifact_id'),
+  outputArtifactId: integer('output_artifact_id'),
+  errorCode: text('error_code'),
+  errorMessage: text('error_message'),
+  errorStack: text('error_stack'),
+  retryable: integer('retryable', { mode: 'boolean' }).notNull().default(false),
+  startedAt: text('started_at'),
+  finishedAt: text('finished_at'),
+  status: text('status').notNull().default('pending'),
+  createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
+  updatedAt: text('updated_at').notNull().default(sql`(datetime('now'))`),
+}, (table) => ({
+  stageAttemptUnique: uniqueIndex('generation_job_stages_attempt_unique')
+    .on(table.generationJobId, table.stage, table.attemptNo),
+  jobStatusIdx: index('generation_job_stages_job_status_idx').on(table.generationJobId, table.status),
+}));
+
+export const aiRuns = sqliteTable('ai_runs', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  generationJobId: integer('generation_job_id').references(() => generationJobs.id, { onDelete: 'set null' }),
+  stage: text('stage').notNull(),
+  promptVersionId: integer('prompt_version_id').notNull().references(() => promptVersions.id),
+  provider: text('provider').notNull(),
+  model: text('model').notNull(),
+  parameters: text('parameters').notNull().default('{}'),
+  inputArtifactId: integer('input_artifact_id'),
+  outputArtifactId: integer('output_artifact_id'),
+  requestId: text('request_id'),
+  inputTokens: integer('input_tokens'),
+  outputTokens: integer('output_tokens'),
+  errorMessage: text('error_message'),
+  status: text('status').notNull().default('pending'),
+  createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
+  updatedAt: text('updated_at').notNull().default(sql`(datetime('now'))`),
+}, (table) => ({
+  jobStageIdx: index('ai_runs_job_stage_idx').on(table.generationJobId, table.stage),
+}));
+
+export const sourceDocuments = sqliteTable('source_documents', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  projectId: integer('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  courseId: integer('course_id').notNull().references(() => courses.id),
+  projectFileId: integer('project_file_id').references(() => projectFiles.id, { onDelete: 'set null' }),
+  documentKind: text('document_kind').notNull().default('exam'),
+  filename: text('filename').notNull(),
+  storagePath: text('storage_path').notNull(),
+  mimeType: text('mime_type'),
+  sha256: text('sha256').notNull(),
+  pageCount: integer('page_count'),
+  extractionConfidence: real('extraction_confidence'),
+  metadata: text('metadata').notNull().default('{}'),
+  status: text('status').notNull().default('pending'),
+  createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
+  updatedAt: text('updated_at').notNull().default(sql`(datetime('now'))`),
+}, (table) => ({
+  projectFileUnique: uniqueIndex('source_documents_project_file_unique').on(table.projectFileId),
+  projectStatusIdx: index('source_documents_project_status_idx').on(table.projectId, table.status),
+}));
+
+export const sourceExams = sqliteTable('source_exams', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  courseId: integer('course_id').notNull().references(() => courses.id),
+  sourceDocumentId: integer('source_document_id').notNull().references(() => sourceDocuments.id, { onDelete: 'cascade' }),
+  title: text('title').notNull(),
+  academicYear: text('academic_year'),
+  term: text('term'),
+  paperVariant: text('paper_variant'),
+  totalScore: real('total_score'),
+  durationMinutes: integer('duration_minutes'),
+  instructions: text('instructions').notNull().default('[]'),
+  structure: text('structure').notNull().default('{}'),
+  aiRunId: integer('ai_run_id').references(() => aiRuns.id, { onDelete: 'set null' }),
+  status: text('status').notNull().default('pending'),
+  createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
+  updatedAt: text('updated_at').notNull().default(sql`(datetime('now'))`),
+}, (table) => ({
+  documentIdx: index('source_exams_document_idx').on(table.sourceDocumentId),
+}));
+
+export const sourceQuestions = sqliteTable('source_questions', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  sourceExamId: integer('source_exam_id').notNull().references(() => sourceExams.id, { onDelete: 'cascade' }),
+  sourceDocumentId: integer('source_document_id').notNull().references(() => sourceDocuments.id, { onDelete: 'cascade' }),
+  pageStart: integer('page_start'),
+  pageEnd: integer('page_end'),
+  originalQuestionNo: text('original_question_no').notNull(),
+  rawStem: text('raw_stem').notNull(),
+  normalizedStem: text('normalized_stem').notNull().default('[]'),
+  questionType: text('question_type').notNull(),
+  options: text('options'),
+  subquestions: text('subquestions').notNull().default('[]'),
+  originalScore: real('original_score'),
+  rawAnswer: text('raw_answer'),
+  rawAnalysis: text('raw_analysis'),
+  contentReferences: text('content_references').notNull().default('[]'),
+  extractionConfidence: real('extraction_confidence').notNull().default(0),
+  teacherReviewStatus: text('teacher_review_status').notNull().default('unreviewed'),
+  alignmentConfidence: real('alignment_confidence'),
+  aiRunId: integer('ai_run_id').references(() => aiRuns.id, { onDelete: 'set null' }),
+  status: text('status').notNull().default('pending'),
+  createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
+  updatedAt: text('updated_at').notNull().default(sql`(datetime('now'))`),
+}, (table) => ({
+  examQuestionUnique: uniqueIndex('source_questions_exam_number_unique')
+    .on(table.sourceExamId, table.originalQuestionNo),
+  reviewIdx: index('source_questions_review_idx').on(table.sourceExamId, table.teacherReviewStatus),
+}));
+
+export const knowledgePoints = sqliteTable('knowledge_points', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  courseId: integer('course_id').notNull().references(() => courses.id, { onDelete: 'cascade' }),
+  parentId: integer('parent_id').references((): AnySQLiteColumn => knowledgePoints.id, { onDelete: 'set null' }),
+  code: text('code').notNull(),
+  name: text('name').notNull(),
+  description: text('description'),
+  aliases: text('aliases').notNull().default('[]'),
+  isLocked: integer('is_locked', { mode: 'boolean' }).notNull().default(false),
+  lockedBy: integer('locked_by').references(() => users.id, { onDelete: 'set null' }),
+  lockedAt: text('locked_at'),
+  mergedIntoId: integer('merged_into_id').references((): AnySQLiteColumn => knowledgePoints.id, { onDelete: 'set null' }),
+  sortOrder: integer('sort_order').notNull().default(0),
+  aiRunId: integer('ai_run_id').references(() => aiRuns.id, { onDelete: 'set null' }),
+  status: text('status').notNull().default('draft'),
+  createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
+  updatedAt: text('updated_at').notNull().default(sql`(datetime('now'))`),
+}, (table) => ({
+  courseCodeUnique: uniqueIndex('knowledge_points_course_code_unique').on(table.courseId, table.code),
+  parentIdx: index('knowledge_points_parent_idx').on(table.courseId, table.parentId),
+}));
+
+export const examTemplates = sqliteTable('exam_templates', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  courseId: integer('course_id').notNull().references(() => courses.id),
+  projectId: integer('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),
+  version: integer('version').notNull().default(1),
+  assessmentTemplate: text('assessment_template').notNull(),
+  renderingTemplate: text('rendering_template').notNull(),
+  sourceExamIds: text('source_exam_ids').notNull().default('[]'),
+  isTeacherConfirmed: integer('is_teacher_confirmed', { mode: 'boolean' }).notNull().default(false),
+  legacyProjectFileId: integer('legacy_project_file_id').references(() => projectFiles.id, { onDelete: 'set null' }),
+  aiRunId: integer('ai_run_id').references(() => aiRuns.id, { onDelete: 'set null' }),
+  status: text('status').notNull().default('draft'),
+  createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
+  updatedAt: text('updated_at').notNull().default(sql`(datetime('now'))`),
+}, (table) => ({
+  projectVersionUnique: uniqueIndex('exam_templates_project_version_unique').on(table.projectId, table.version),
+}));
+
+export const blueprints = sqliteTable('blueprints', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  courseId: integer('course_id').notNull().references(() => courses.id),
+  projectId: integer('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  kind: text('kind', { enum: ['historical', 'target', 'actual'] }).notNull(),
+  version: integer('version').notNull().default(1),
+  totalScore: real('total_score').notNull(),
+  sourceExamIds: text('source_exam_ids').notNull().default('[]'),
+  historicalBlueprintId: integer('historical_blueprint_id').references((): AnySQLiteColumn => blueprints.id, { onDelete: 'set null' }),
+  targetBlueprintId: integer('target_blueprint_id').references((): AnySQLiteColumn => blueprints.id, { onDelete: 'set null' }),
+  generatedPaperId: integer('generated_paper_id'),
+  teacherNotes: text('teacher_notes'),
+  isTeacherConfirmed: integer('is_teacher_confirmed', { mode: 'boolean' }).notNull().default(false),
+  aiRunId: integer('ai_run_id').references(() => aiRuns.id, { onDelete: 'set null' }),
+  status: text('status').notNull().default('draft'),
+  createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
+  updatedAt: text('updated_at').notNull().default(sql`(datetime('now'))`),
+}, (table) => ({
+  projectKindVersionUnique: uniqueIndex('blueprints_project_kind_version_unique')
+    .on(table.projectId, table.kind, table.version),
+}));
+
+export const blueprintCells = sqliteTable('blueprint_cells', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  blueprintId: integer('blueprint_id').notNull().references(() => blueprints.id, { onDelete: 'cascade' }),
+  knowledgePointId: integer('knowledge_point_id').notNull().references(() => knowledgePoints.id),
+  questionType: text('question_type').notNull(),
+  cognitiveLevel: text('cognitive_level').notNull(),
+  difficultyLevel: text('difficulty_level').notNull(),
+  questionCount: integer('question_count').notNull().default(0),
+  score: real('score').notNull().default(0),
+  scoreRatio: real('score_ratio').notNull().default(0),
+  tolerance: real('tolerance'),
+  status: text('status').notNull().default('draft'),
+  createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
+  updatedAt: text('updated_at').notNull().default(sql`(datetime('now'))`),
+}, (table) => ({
+  dimensionUnique: uniqueIndex('blueprint_cells_dimension_unique').on(
+    table.blueprintId, table.knowledgePointId, table.questionType, table.cognitiveLevel, table.difficultyLevel,
+  ),
+}));
+
+export const generationPlans = sqliteTable('generation_plans', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  projectId: integer('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  courseId: integer('course_id').notNull().references(() => courses.id),
+  examTemplateId: integer('exam_template_id').notNull().references(() => examTemplates.id),
+  targetBlueprintId: integer('target_blueprint_id').notNull().references(() => blueprints.id),
+  numberOfSets: integer('number_of_sets').notNull().default(1),
+  totalScorePerSet: real('total_score_per_set').notNull(),
+  isTeacherConfirmed: integer('is_teacher_confirmed', { mode: 'boolean' }).notNull().default(false),
+  aiRunId: integer('ai_run_id').references(() => aiRuns.id, { onDelete: 'set null' }),
+  status: text('status').notNull().default('draft'),
+  createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
+  updatedAt: text('updated_at').notNull().default(sql`(datetime('now'))`),
+});
+
+export const generationPlanItems = sqliteTable('generation_plan_items', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  generationPlanId: integer('generation_plan_id').notNull().references(() => generationPlans.id, { onDelete: 'cascade' }),
+  slotKey: text('slot_key').notNull(),
+  setNo: integer('set_no').notNull(),
+  sectionId: text('section_id').notNull(),
+  orderNo: integer('order_no').notNull(),
+  knowledgePointIds: text('knowledge_point_ids').notNull(),
+  questionType: text('question_type').notNull(),
+  score: real('score').notNull(),
+  difficulty: text('difficulty').notNull(),
+  cognitiveLevel: text('cognitive_level').notNull(),
+  expectedAnswerKind: text('expected_answer_kind').notNull(),
+  contentRequirements: text('content_requirements').notNull().default('{}'),
+  correspondingSlotKey: text('corresponding_slot_key'),
+  sourceMaterialDocumentIds: text('source_material_document_ids').notNull().default('[]'),
+  forbiddenSourceQuestionIds: text('forbidden_source_question_ids').notNull().default('[]'),
+  status: text('status').notNull().default('pending'),
+  createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
+  updatedAt: text('updated_at').notNull().default(sql`(datetime('now'))`),
+}, (table) => ({
+  planSlotUnique: uniqueIndex('generation_plan_items_slot_unique').on(table.generationPlanId, table.setNo, table.slotKey),
+}));
+
+export const generatedQuestions = sqliteTable('generated_questions', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  generationPlanId: integer('generation_plan_id').references(() => generationPlans.id, { onDelete: 'set null' }),
+  generationPlanItemId: integer('generation_plan_item_id').references(() => generationPlanItems.id, { onDelete: 'set null' }),
+  legacyQuestionId: integer('legacy_question_id').references(() => questions.id, { onDelete: 'set null' }),
+  setNo: integer('set_no').notNull().default(1),
+  questionType: text('question_type').notNull(),
+  stem: text('stem').notNull().default('[]'),
+  options: text('options'),
+  subquestions: text('subquestions').notNull().default('[]'),
+  score: real('score').notNull().default(0),
+  answer: text('answer'),
+  explanation: text('explanation').notNull().default('[]'),
+  knowledgePointIds: text('knowledge_point_ids').notNull().default('[]'),
+  cognitiveLevel: text('cognitive_level'),
+  difficulty: text('difficulty'),
+  sourceQuestionIds: text('source_question_ids').notNull().default('[]'),
+  provider: text('provider').notNull().default('unknown-legacy'),
+  model: text('model').notNull().default('unknown-legacy'),
+  promptVersionId: integer('prompt_version_id').notNull().references(() => promptVersions.id),
+  generationParameters: text('generation_parameters').notNull().default('{}'),
+  aiRunId: integer('ai_run_id').references(() => aiRuns.id, { onDelete: 'set null' }),
+  status: text('status').notNull().default('draft'),
+  createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
+  updatedAt: text('updated_at').notNull().default(sql`(datetime('now'))`),
+}, (table) => ({
+  legacyQuestionUnique: uniqueIndex('generated_questions_legacy_unique').on(table.legacyQuestionId),
+  planItemIdx: index('generated_questions_plan_item_idx').on(table.generationPlanItemId),
+}));
+
+export const questionClassifications = sqliteTable('question_classifications', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  questionKind: text('question_kind', { enum: ['source', 'generated'] }).notNull(),
+  sourceQuestionId: integer('source_question_id').references(() => sourceQuestions.id, { onDelete: 'cascade' }),
+  generatedQuestionId: integer('generated_question_id').references(() => generatedQuestions.id, { onDelete: 'cascade' }),
+  knowledgePointId: integer('knowledge_point_id').notNull().references(() => knowledgePoints.id),
+  role: text('role', { enum: ['primary', 'secondary'] }).notNull(),
+  cognitiveLevel: text('cognitive_level').notNull(),
+  difficultyLevel: text('difficulty_level').notNull(),
+  difficultyScore: real('difficulty_score').notNull(),
+  difficultySource: text('difficulty_source').notNull(),
+  difficultyReason: text('difficulty_reason').notNull(),
+  confidence: real('confidence').notNull(),
+  empiricalSampleSize: integer('empirical_sample_size'),
+  isTeacherConfirmed: integer('is_teacher_confirmed', { mode: 'boolean' }).notNull().default(false),
+  aiRunId: integer('ai_run_id').references(() => aiRuns.id, { onDelete: 'set null' }),
+  status: text('status').notNull().default('pending'),
+  createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
+  updatedAt: text('updated_at').notNull().default(sql`(datetime('now'))`),
+}, (table) => ({
+  sourceKpUnique: uniqueIndex('question_classifications_source_kp_unique')
+    .on(table.sourceQuestionId, table.knowledgePointId),
+  generatedKpUnique: uniqueIndex('question_classifications_generated_kp_unique')
+    .on(table.generatedQuestionId, table.knowledgePointId),
+}));
+
+export const rubrics = sqliteTable('rubrics', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  generatedQuestionId: integer('generated_question_id').notNull().references(() => generatedQuestions.id, { onDelete: 'cascade' }),
+  totalScore: real('total_score').notNull(),
+  items: text('items').notNull(),
+  generalRule: text('general_rule'),
+  provider: text('provider').notNull(),
+  model: text('model').notNull(),
+  promptVersionId: integer('prompt_version_id').notNull().references(() => promptVersions.id),
+  generationParameters: text('generation_parameters').notNull().default('{}'),
+  aiRunId: integer('ai_run_id').references(() => aiRuns.id, { onDelete: 'set null' }),
+  status: text('status').notNull().default('draft'),
+  createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
+  updatedAt: text('updated_at').notNull().default(sql`(datetime('now'))`),
+}, (table) => ({
+  questionUnique: uniqueIndex('rubrics_generated_question_unique').on(table.generatedQuestionId),
+}));
+
+export const generatedPapers = sqliteTable('generated_papers', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  generationPlanId: integer('generation_plan_id').references(() => generationPlans.id, { onDelete: 'set null' }),
+  generationJobId: integer('generation_job_id').references(() => generationJobs.id, { onDelete: 'set null' }),
+  courseId: integer('course_id').references(() => courses.id, { onDelete: 'set null' }),
+  legacyProjectFileId: integer('legacy_project_file_id').references(() => projectFiles.id, { onDelete: 'set null' }),
+  setNo: integer('set_no').notNull().default(1),
+  version: integer('version').notNull().default(1),
+  title: text('title').notNull(),
+  durationMinutes: integer('duration_minutes').notNull().default(120),
+  totalScore: real('total_score').notNull().default(0),
+  instructions: text('instructions').notNull().default('[]'),
+  canonicalJson: text('canonical_json').notNull().default('{}'),
+  actualBlueprintId: integer('actual_blueprint_id').references(() => blueprints.id, { onDelete: 'set null' }),
+  validationReportId: integer('validation_report_id'),
+  selectedAt: text('selected_at'),
+  status: text('status').notNull().default('draft'),
+  createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
+  updatedAt: text('updated_at').notNull().default(sql`(datetime('now'))`),
+}, (table) => ({
+  legacyFileUnique: uniqueIndex('generated_papers_legacy_file_unique').on(table.legacyProjectFileId),
+  planSetVersionUnique: uniqueIndex('generated_papers_plan_set_version_unique')
+    .on(table.generationPlanId, table.setNo, table.version),
+}));
+
+export const generatedPaperItems = sqliteTable('generated_paper_items', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  generatedPaperId: integer('generated_paper_id').notNull().references(() => generatedPapers.id, { onDelete: 'cascade' }),
+  generatedQuestionId: integer('generated_question_id').notNull().references(() => generatedQuestions.id),
+  sectionId: text('section_id').notNull(),
+  sectionTitle: text('section_title').notNull(),
+  orderNo: integer('order_no').notNull(),
+  score: real('score').notNull(),
+  status: text('status').notNull().default('draft'),
+  createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
+  updatedAt: text('updated_at').notNull().default(sql`(datetime('now'))`),
+}, (table) => ({
+  paperOrderUnique: uniqueIndex('generated_paper_items_order_unique').on(table.generatedPaperId, table.orderNo),
+}));
+
+export const validationReports = sqliteTable('validation_reports', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  generatedPaperId: integer('generated_paper_id').notNull().references(() => generatedPapers.id, { onDelete: 'cascade' }),
+  targetBlueprintId: integer('target_blueprint_id').references(() => blueprints.id, { onDelete: 'set null' }),
+  actualBlueprintId: integer('actual_blueprint_id').references(() => blueprints.id, { onDelete: 'set null' }),
+  passed: integer('passed', { mode: 'boolean' }).notNull().default(false),
+  findings: text('findings').notNull().default('[]'),
+  metrics: text('metrics').notNull().default('{}'),
+  validatorVersion: text('validator_version').notNull(),
+  aiRunId: integer('ai_run_id').references(() => aiRuns.id, { onDelete: 'set null' }),
+  status: text('status').notNull().default('pending'),
+  createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
+  updatedAt: text('updated_at').notNull().default(sql`(datetime('now'))`),
+}, (table) => ({
+  paperIdx: index('validation_reports_paper_idx').on(table.generatedPaperId),
+}));
+
+export const exportArtifacts = sqliteTable('export_artifacts', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  generatedPaperId: integer('generated_paper_id').notNull().references(() => generatedPapers.id, { onDelete: 'cascade' }),
+  paperVersion: integer('paper_version').notNull(),
+  audience: text('audience', { enum: ['student', 'teacher', 'answer', 'rubric'] }).notNull(),
+  format: text('format', { enum: ['markdown', 'latex', 'pdf', 'docx'] }).notNull(),
+  storagePath: text('storage_path').notNull(),
+  sha256: text('sha256').notNull(),
+  rendererVersion: text('renderer_version').notNull(),
+  sourcePaperHash: text('source_paper_hash').notNull(),
+  integrity: text('integrity').notNull().default('{}'),
+  status: text('status').notNull().default('pending'),
+  createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
+  updatedAt: text('updated_at').notNull().default(sql`(datetime('now'))`),
+}, (table) => ({
+  renditionUnique: uniqueIndex('export_artifacts_rendition_unique')
+    .on(table.generatedPaperId, table.paperVersion, table.audience, table.format, table.rendererVersion),
+}));
 
 export const questions = sqliteTable('questions', {
   id: integer('id').primaryKey({ autoIncrement: true }),

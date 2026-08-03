@@ -9,6 +9,6 @@
     "rootDir": ".",
     "skipLibCheck": true
   },
-  "include": ["index.ts", "schemas.ts", "types.ts"],
+  "include": ["index.ts", "schemas.ts", "types.ts", "questionGeneration.ts"],
   "exclude": ["dist", "node_modules"]
 }
