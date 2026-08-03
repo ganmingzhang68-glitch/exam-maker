@@ -4,7 +4,8 @@ import { join, basename } from 'node:path';
 import { db, schema, saveToDisk } from '../db/index.js';
 import { addEvent } from '../controllers/project.js';
 import { getProjectDir } from './workflow.js';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
+import { importGeneratedQuestionsFromProject } from './questionImporter.js';
 import { isConfigured, sendMessage } from './ai.js';
 
 export interface CompileResult {
@@ -23,14 +24,20 @@ interface EnvInfo {
 export async function compilePapers(
   projectId: number, outputType: string
 ): Promise<CompileResult[]> {
+  const questionImport = importGeneratedQuestionsFromProject(projectId);
+  if (questionImport.imported > 0 || questionImport.skipped > 0) {
+    addEvent(projectId, 'step-6', 'log',
+      `📚 AI题目入库: 新增${questionImport.imported}题, 已存在${questionImport.skipped}题`);
+  }
   const dir = getProjectDir(projectId);
-  const paperDir = join(dir, 'papers');
   const outputDir = join(dir, 'output');
   if (!existsSync(outputDir)) mkdirSync(outputDir, { recursive: true });
 
   const papers = db.select().from(schema.projectFiles)
-    .where(eq(schema.projectFiles.projectId, projectId))
-    .where(eq(schema.projectFiles.type, 'generated_paper'))
+    .where(and(
+      eq(schema.projectFiles.projectId, projectId),
+      eq(schema.projectFiles.type, 'generated_paper'),
+    ))
     .all();
 
   if (papers.length === 0) {
@@ -99,8 +106,10 @@ export async function compilePapers(
     for (const outFile of result.outputFiles) {
       const outName = basename(outFile);
       const existing = db.select().from(schema.projectFiles)
-        .where(eq(schema.projectFiles.projectId, projectId))
-        .where(eq(schema.projectFiles.filename, outName))
+        .where(and(
+          eq(schema.projectFiles.projectId, projectId),
+          eq(schema.projectFiles.filename, outName),
+        ))
         .get();
       if (!existing) {
         db.insert(schema.projectFiles).values({
