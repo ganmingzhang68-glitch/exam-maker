@@ -3,13 +3,19 @@ import { rawDb } from './index.js';
 import { initialMigration } from './migrations/001_initial.js';
 import { examMvpFoundationMigration } from './migrations/002_exam_mvp_foundation.js';
 import { examDeliveryMigration } from './migrations/003_exam_delivery.js';
+import { gradingConfigMigration } from './migrations/004_grading_config.js';
 
 interface Migration {
   id: string;
   up(database: Database): void;
 }
 
-const migrations: Migration[] = [initialMigration, examMvpFoundationMigration, examDeliveryMigration];
+const migrations: Migration[] = [
+  initialMigration,
+  examMvpFoundationMigration,
+  examDeliveryMigration,
+  gradingConfigMigration,
+];
 
 export function runMigrations(database: Database = rawDb): void {
   database.run(`CREATE TABLE IF NOT EXISTS schema_migrations (

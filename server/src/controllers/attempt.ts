@@ -5,6 +5,7 @@ import { db, saveToDisk, schema } from '../db/index.js';
 import { AppError } from '../middleware/errorHandler.js';
 import type { AuthRequest } from '../middleware/auth.js';
 import { getAttemptDetail, parsePaperSnapshot } from '../services/attemptSnapshot.js';
+import { gradeAttempt } from '../services/grading.js';
 
 function getStudentAttempt(req: AuthRequest, id: number) {
   const attempt = db.select().from(schema.attempts).where(eq(schema.attempts.id, id)).get();
@@ -65,18 +66,14 @@ export function submitAttempt(req: AuthRequest, res: Response, next: NextFunctio
   try {
     const id = positiveIdSchema.parse(req.params.id);
     const attempt = getStudentAttempt(req, id);
-    if (['submitted', 'grading', 'graded'].includes(attempt.status)) {
+    if (['grading', 'graded'].includes(attempt.status)) {
       res.json({ success: true, data: { ...getAttemptDetail(id), idempotent: true } });
       return;
     }
-    if (attempt.status !== 'in_progress') throw new AppError(409, '当前作答状态不能提交');
-    const now = new Date().toISOString();
-    db.update(schema.attempts).set({
-      status: 'submitted',
-      submittedAt: attempt.submittedAt ?? now,
-      updatedAt: now,
-    }).where(eq(schema.attempts.id, id)).run();
+    if (!['in_progress', 'submitted'].includes(attempt.status)) throw new AppError(409, '当前作答状态不能提交');
+    const wasAlreadySubmitted = attempt.status === 'submitted';
+    gradeAttempt(id);
     saveToDisk();
-    res.json({ success: true, data: { ...getAttemptDetail(id), idempotent: false } });
+    res.json({ success: true, data: { ...getAttemptDetail(id), idempotent: wasAlreadySubmitted } });
   } catch (error) { next(error); }
 }

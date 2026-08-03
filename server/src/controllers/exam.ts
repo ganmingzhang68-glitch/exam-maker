@@ -82,6 +82,9 @@ export function createExam(req: AuthRequest, res: Response, next: NextFunction) 
       endAt: data.endAt,
       durationMinutes: data.durationMinutes,
       allowedAttempts: data.allowedAttempts,
+      fillBlankIgnoreCase: data.fillBlankIgnoreCase,
+      showAnswers: data.showAnswers,
+      showAnalysis: data.showAnalysis,
     }).returning().get();
     saveToDisk();
     res.status(201).json({ success: true, data: teacherExamSummary(row) });
@@ -101,6 +104,9 @@ export function updateExam(req: AuthRequest, res: Response, next: NextFunction) 
       endAt: changes.endAt ?? exam.endAt,
       durationMinutes: changes.durationMinutes ?? exam.durationMinutes,
       allowedAttempts: changes.allowedAttempts ?? exam.allowedAttempts,
+      fillBlankIgnoreCase: changes.fillBlankIgnoreCase ?? exam.fillBlankIgnoreCase,
+      showAnswers: changes.showAnswers ?? exam.showAnswers,
+      showAnalysis: changes.showAnalysis ?? exam.showAnalysis,
     });
     getOwnedPaper(req, merged.paperId);
     const row = db.update(schema.exams).set({

@@ -224,6 +224,9 @@ export interface Exam {
   endAt: string | null;
   durationMinutes: number;
   allowedAttempts: number;
+  fillBlankIgnoreCase: boolean;
+  showAnswers: boolean;
+  showAnalysis: boolean;
   publishedAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -334,4 +337,38 @@ export interface AttemptDetail {
   paper: AttemptPaperSnapshot['paper'];
   questions: AttemptQuestionSnapshot[];
   answers: Answer[];
+}
+
+export interface TeacherExamStudentResult {
+  assignmentId: number;
+  student: Pick<User, 'id' | 'username' | 'email'>;
+  attempts: Attempt[];
+}
+
+export interface GradingQuestionDetail extends AttemptQuestionSnapshot {
+  answer: Answer;
+  answerKey: Record<string, unknown> | null;
+  analysis: string | null;
+  subjective: boolean;
+}
+
+export interface TeacherAttemptGradingDetail {
+  attempt: Attempt;
+  student: Pick<User, 'id' | 'username' | 'email'>;
+  exam: Pick<Exam, 'id' | 'title' | 'status'>;
+  paper: AttemptPaperSnapshot['paper'];
+  questions: GradingQuestionDetail[];
+}
+
+export interface StudentResultQuestion extends AttemptQuestionSnapshot {
+  answer: Answer;
+  answerKey?: Record<string, unknown> | null;
+  analysis?: string | null;
+}
+
+export interface StudentAttemptResult {
+  attempt: Attempt;
+  exam: Pick<Exam, 'id' | 'title' | 'status' | 'showAnswers' | 'showAnalysis'>;
+  paper: AttemptPaperSnapshot['paper'];
+  questions: StudentResultQuestion[];
 }

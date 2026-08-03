@@ -11,6 +11,11 @@ import {
   startExam,
   updateExam,
 } from '../controllers/exam.js';
+import {
+  getTeacherAttemptResult,
+  gradeSubjectiveAnswer,
+  listExamResults,
+} from '../controllers/result.js';
 
 const router = Router();
 
@@ -20,6 +25,14 @@ router.get('/:id/questions', requireAuth, requireRole('student'), getStudentExam
 
 router.get('/', requireAuth, requireRole('teacher', 'admin'), listTeacherExams);
 router.post('/', requireAuth, requireRole('teacher', 'admin'), createExam);
+router.get('/:id/results', requireAuth, requireRole('teacher', 'admin'), listExamResults);
+router.get('/:id/attempts/:attemptId', requireAuth, requireRole('teacher', 'admin'), getTeacherAttemptResult);
+router.patch(
+  '/:id/attempts/:attemptId/answers/:answerId/grade',
+  requireAuth,
+  requireRole('teacher', 'admin'),
+  gradeSubjectiveAnswer,
+);
 router.get('/:id', requireAuth, requireRole('teacher', 'admin'), getTeacherExam);
 router.patch('/:id', requireAuth, requireRole('teacher', 'admin'), updateExam);
 router.post('/:id/publish', requireAuth, requireRole('teacher', 'admin'), publishExam);

@@ -135,6 +135,9 @@ export const createExamSchema = z.object({
   endAt: z.string().datetime({ offset: true }),
   durationMinutes: z.number().int().min(1).max(1440),
   allowedAttempts: z.number().int().min(1).max(20).default(1),
+  fillBlankIgnoreCase: z.boolean().default(false),
+  showAnswers: z.boolean().default(false),
+  showAnalysis: z.boolean().default(false),
 }).superRefine((value, ctx) => {
   if (new Date(value.startAt).getTime() >= new Date(value.endAt).getTime()) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['endAt'], message: '结束时间必须晚于开始时间' });
@@ -148,6 +151,9 @@ export const updateExamSchema = z.object({
   endAt: z.string().datetime({ offset: true }).optional(),
   durationMinutes: z.number().int().min(1).max(1440).optional(),
   allowedAttempts: z.number().int().min(1).max(20).optional(),
+  fillBlankIgnoreCase: z.boolean().optional(),
+  showAnswers: z.boolean().optional(),
+  showAnalysis: z.boolean().optional(),
 });
 
 export const answerContentSchema = z.union([
@@ -158,4 +164,9 @@ export const answerContentSchema = z.union([
 
 export const saveAnswerSchema = z.object({
   content: answerContentSchema,
+});
+
+export const manualGradeSchema = z.object({
+  score: z.number().min(0).max(1000),
+  feedback: z.string().trim().max(10000).nullable().optional(),
 });
