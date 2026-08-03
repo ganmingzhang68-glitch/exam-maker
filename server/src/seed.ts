@@ -7,28 +7,31 @@ async function seed() {
   await initDb();
   runMigrations();
 
-  // Check if admin already exists
-  const existing = db.select().from(schema.users)
-    .where(eq(schema.users.username, 'admin'))
-    .get();
+  const accounts = [
+    { username: 'test_teacher', email: 'teacher@example.com', password: 'Teacher123!', role: 'teacher' as const },
+    { username: 'test_student', email: 'student@example.com', password: 'Student123!', role: 'student' as const },
+  ];
 
-  if (existing) {
-    console.log('⚠ 用户 admin 已存在，跳过创建');
-    return;
+  for (const account of accounts) {
+    const existing = db.select().from(schema.users)
+      .where(eq(schema.users.username, account.username))
+      .get();
+    if (existing) {
+      console.log(`⚠ 用户 ${account.username} 已存在，跳过创建`);
+      continue;
+    }
+
+    const passwordHash = await bcrypt.hash(account.password, 10);
+    db.insert(schema.users).values({
+      username: account.username,
+      email: account.email,
+      passwordHash,
+      role: account.role,
+    }).run();
+    console.log(`✅ 测试${account.role === 'teacher' ? '教师' : '学生'}账号创建成功: ${account.username}`);
   }
 
-  const hash = await bcrypt.hash('123456', 10);
-  db.insert(schema.users).values({
-    username: 'admin',
-    email: 'admin@exam-maker.com',
-    passwordHash: hash,
-    role: 'teacher',
-  }).run();
-
   saveToDisk();
-  console.log('✅ 默认用户创建成功！');
-  console.log('   用户名: admin');
-  console.log('   密码:   123456');
 }
 
 seed().catch(console.error);
