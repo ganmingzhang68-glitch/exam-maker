@@ -237,6 +237,43 @@ export const sourceQuestions = sqliteTable('source_questions', {
   reviewIdx: index('source_questions_review_idx').on(table.sourceExamId, table.teacherReviewStatus),
 }));
 
+export const sourceAnswerCandidates = sqliteTable('source_answer_candidates', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  sourceDocumentId: integer('source_document_id').notNull().references(() => sourceDocuments.id, { onDelete: 'cascade' }),
+  page: integer('page'),
+  rawNumber: text('raw_number'),
+  normalizedNumber: text('normalized_number'),
+  answerType: text('answer_type').notNull(),
+  answerContent: text('answer_content').notNull(),
+  explanationContent: text('explanation_content'),
+  scoreInformation: text('score_information'),
+  sourceText: text('source_text').notNull(),
+  extractionConfidence: real('extraction_confidence').notNull().default(0),
+  status: text('status').notNull().default('extracted'),
+  createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
+  updatedAt: text('updated_at').notNull().default(sql`(datetime('now'))`),
+}, (table) => ({
+  documentNumberIdx: index('source_answer_candidates_document_number_idx').on(table.sourceDocumentId, table.normalizedNumber),
+}));
+
+export const questionAnswerAlignments = sqliteTable('question_answer_alignments', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  sourceQuestionId: integer('source_question_id').notNull().references(() => sourceQuestions.id, { onDelete: 'cascade' }),
+  sourceAnswerCandidateId: integer('source_answer_candidate_id').references(() => sourceAnswerCandidates.id, { onDelete: 'set null' }),
+  generationStageRunId: integer('generation_stage_run_id').references(() => generationJobStages.id, { onDelete: 'set null' }),
+  alignmentStatus: text('alignment_status', { enum: ['matched', 'uncertain', 'missing_answer', 'duplicate_candidate', 'conflicting_candidates'] }).notNull(),
+  confidence: real('confidence').notNull(),
+  reason: text('reason').notNull(),
+  normalizedAnswer: text('normalized_answer'),
+  requiresTeacherReview: integer('requires_teacher_review', { mode: 'boolean' }).notNull().default(true),
+  sourceEvidence: text('source_evidence').notNull().default('[]'),
+  status: text('status').notNull().default('active'),
+  createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
+  updatedAt: text('updated_at').notNull().default(sql`(datetime('now'))`),
+}, (table) => ({
+  questionIdx: index('question_answer_alignments_question_idx').on(table.sourceQuestionId, table.status),
+}));
+
 export const knowledgePoints = sqliteTable('knowledge_points', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   courseId: integer('course_id').notNull().references(() => courses.id, { onDelete: 'cascade' }),
