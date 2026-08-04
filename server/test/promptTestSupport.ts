@@ -21,7 +21,10 @@ export function assertPromptContract<I extends z.ZodTypeAny, O extends z.ZodType
 
   const parsed = parsePromptOutput(definition, JSON.stringify(definition.examples.correct));
   assert.equal(typeof parsed, 'object');
-  assert.throws(() => parsePromptOutput(definition, `\`\`\`json\n${JSON.stringify(definition.examples.correct)}\n\`\`\``));
+  assert.deepEqual(
+    parsePromptOutput(definition, `\`\`\`json\n${JSON.stringify(definition.examples.correct)}\n\`\`\``),
+    parsed,
+  );
 
   const extra = { ...(definition.examples.correct as Record<string, unknown>), forbiddenExtraField: true };
   assert.throws(() => parsePromptOutput(definition, JSON.stringify(extra)));

@@ -6,6 +6,7 @@ import { examMvpFoundationMigration } from '../src/db/migrations/002_exam_mvp_fo
 import { examDeliveryMigration } from '../src/db/migrations/003_exam_delivery.js';
 import { gradingConfigMigration } from '../src/db/migrations/004_grading_config.js';
 import { questionGenerationDomainMigration } from '../src/db/migrations/005_question_generation_domain.js';
+import { promptAiRunMetadataMigration } from '../src/db/migrations/006_prompt_ai_run_metadata.js';
 
 test('question generation migration preserves and links legacy data', async () => {
   const SQL = await initSqlJs();
@@ -54,6 +55,20 @@ test('question generation migration preserves and links legacy data', async () =
     'export_artifacts', 'generation_jobs', 'prompt_versions', 'ai_runs',
   ]) assert.ok(tables.has(name), `missing table ${name}`);
 
+  assert.equal(database.exec('PRAGMA foreign_key_check').length, 0);
+  database.close();
+});
+
+test('prompt/AI run metadata migration backfills aliases without deleting legacy rows', async () => {
+  const SQL = await initSqlJs();
+  const database = new SQL.Database();
+  for (const migration of [initialMigration, examMvpFoundationMigration, examDeliveryMigration, gradingConfigMigration, questionGenerationDomainMigration]) migration.up(database);
+  promptAiRunMetadataMigration.up(database);
+  const row = database.exec("SELECT key, prompt_id, stage, pipeline_stage, sha256, template_hash, schema_hash FROM prompt_versions WHERE key='legacy-unknown'")[0].values[0];
+  assert.deepEqual(row, ['legacy-unknown', 'legacy-unknown', 'question_generation', 'question_generation', 'legacy-unknown', 'legacy-unknown', 'legacy-unknown']);
+  const aiColumns = new Set(database.exec('PRAGMA table_info(ai_runs)')[0].values.map((item) => String(item[1])));
+  for (const column of ['stage_run_id', 'model_parameters', 'input_hash', 'output_raw', 'output_parsed', 'error_type', 'retry_count', 'total_tokens', 'latency_ms', 'started_at', 'finished_at']) assert.ok(aiColumns.has(column));
+  promptAiRunMetadataMigration.up(database);
   assert.equal(database.exec('PRAGMA foreign_key_check').length, 0);
   database.close();
 });

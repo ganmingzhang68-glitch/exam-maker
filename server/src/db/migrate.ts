@@ -5,6 +5,7 @@ import { examMvpFoundationMigration } from './migrations/002_exam_mvp_foundation
 import { examDeliveryMigration } from './migrations/003_exam_delivery.js';
 import { gradingConfigMigration } from './migrations/004_grading_config.js';
 import { questionGenerationDomainMigration } from './migrations/005_question_generation_domain.js';
+import { promptAiRunMetadataMigration } from './migrations/006_prompt_ai_run_metadata.js';
 
 interface Migration {
   id: string;
@@ -17,6 +18,7 @@ const migrations: Migration[] = [
   examDeliveryMigration,
   gradingConfigMigration,
   questionGenerationDomainMigration,
+  promptAiRunMetadataMigration,
 ];
 
 export function runMigrations(database: Database = rawDb): void {

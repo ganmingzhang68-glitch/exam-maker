@@ -79,7 +79,9 @@ export function parsePromptOutput<I extends z.ZodTypeAny, O extends z.ZodTypeAny
   definition: PromptDefinition<I, O>,
   raw: string,
 ): z.output<O> {
-  const trimmed = raw.trim();
+  let trimmed = raw.trim();
+  const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  if (fenced) trimmed = fenced[1].trim();
   if (!trimmed.startsWith('{') || !trimmed.endsWith('}')) {
     throw new Error(`${definition.id}@${definition.version} 必须返回单个 JSON 对象`);
   }
