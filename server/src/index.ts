@@ -16,6 +16,7 @@ import questionRoutes from './routes/question.js';
 import examRoutes from './routes/exam.js';
 import paperRoutes from './routes/paper.js';
 import attemptRoutes from './routes/attempt.js';
+import exportArtifactRoutes from './routes/exportArtifact.js';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -38,6 +39,7 @@ app.use('/api/questions', questionRoutes);
 app.use('/api/papers', paperRoutes);
 app.use('/api/exams', examRoutes);
 app.use('/api/attempts', attemptRoutes);
+app.use('/api/export-artifacts', exportArtifactRoutes);
 
 // Error handler (must be last)
 app.use(errorHandler);

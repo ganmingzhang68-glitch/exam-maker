@@ -531,19 +531,23 @@ export const exportArtifacts = sqliteTable('export_artifacts', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   generatedPaperId: integer('generated_paper_id').notNull().references(() => generatedPapers.id, { onDelete: 'cascade' }),
   paperVersion: integer('paper_version').notNull(),
-  audience: text('audience', { enum: ['student', 'teacher', 'answer', 'rubric'] }).notNull(),
+  artifactType: text('artifact_type', { enum: ['question_paper', 'answer_key', 'rubric', 'combined_teacher_package'] }).notNull(),
+  audience: text('audience', { enum: ['student', 'teacher', 'grader', 'internal'] }).notNull(),
   format: text('format', { enum: ['markdown', 'latex', 'pdf', 'docx'] }).notNull(),
   storagePath: text('storage_path').notNull(),
   sha256: text('sha256').notNull(),
+  contentHash: text('content_hash').notNull(),
   rendererVersion: text('renderer_version').notNull(),
   sourcePaperHash: text('source_paper_hash').notNull(),
   integrity: text('integrity').notNull().default('{}'),
+  generationStatus: text('generation_status').notNull().default('pending'),
+  validationStatus: text('validation_status').notNull().default('pending'),
   status: text('status').notNull().default('pending'),
   createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
   updatedAt: text('updated_at').notNull().default(sql`(datetime('now'))`),
 }, (table) => ({
   renditionUnique: uniqueIndex('export_artifacts_rendition_unique')
-    .on(table.generatedPaperId, table.paperVersion, table.audience, table.format, table.rendererVersion),
+    .on(table.generatedPaperId, table.paperVersion, table.artifactType, table.audience, table.format, table.rendererVersion),
 }));
 
 export const questions = sqliteTable('questions', {

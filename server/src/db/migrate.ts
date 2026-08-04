@@ -7,6 +7,7 @@ import { gradingConfigMigration } from './migrations/004_grading_config.js';
 import { questionGenerationDomainMigration } from './migrations/005_question_generation_domain.js';
 import { promptAiRunMetadataMigration } from './migrations/006_prompt_ai_run_metadata.js';
 import { answerAlignmentMigration } from './migrations/007_answer_alignment.js';
+import { secureExportArtifactsMigration } from './migrations/008_secure_export_artifacts.js';
 
 interface Migration {
   id: string;
@@ -21,6 +22,7 @@ const migrations: Migration[] = [
   questionGenerationDomainMigration,
   promptAiRunMetadataMigration,
   answerAlignmentMigration,
+  secureExportArtifactsMigration,
 ];
 
 export function runMigrations(database: Database = rawDb): void {

@@ -485,10 +485,12 @@ export const validationReportSchema = entityIdentitySchema.extend({
 export const exportArtifactSchema = entityIdentitySchema.extend({
   generatedPaperId: z.number().int().positive(),
   paperVersion: z.number().int().positive(),
-  audience: z.enum(['student', 'teacher', 'answer', 'rubric']),
+  artifactType: z.enum(['question_paper', 'answer_key', 'rubric', 'combined_teacher_package']),
+  audience: z.enum(['student', 'teacher', 'grader', 'internal']),
   format: z.enum(['markdown', 'latex', 'pdf', 'docx']),
   storagePath: z.string().min(1),
   sha256: z.string().min(1),
+  contentHash: z.string().min(1),
   rendererVersion: z.string().min(1),
   sourcePaperHash: z.string().min(1),
   integrity: z.object({
@@ -498,6 +500,8 @@ export const exportArtifactSchema = entityIdentitySchema.extend({
     compiled: z.boolean().nullable(),
     opened: z.boolean().nullable(),
   }),
+  generationStatus: z.string().min(1),
+  validationStatus: z.string().min(1),
 });
 
 export const generationJobStageSchema = z.object({
