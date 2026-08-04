@@ -1,4 +1,4 @@
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync, existsSync, mkdirSync, copyFileSync } from 'node:fs';
 import { join, basename } from 'node:path';
 import { db, schema, saveToDisk } from '../db/index.js';
@@ -9,6 +9,7 @@ import { importGeneratedQuestionsFromProject } from './questionImporter.js';
 import { isConfigured } from './ai.js';
 import { runStructuredPrompt } from './promptRunner.js';
 import { independentValidationPrompt } from '../prompts/independentValidationPrompt.js';
+import { detectEnvironment, type EnvInfo } from './envDetect.js';
 
 export interface CompileResult {
   paperName: string;
@@ -16,11 +17,6 @@ export interface CompileResult {
   outputFiles: string[];
   success: boolean;
   errors: string[];
-}
-
-interface EnvInfo {
-  latex: { available: boolean; engine: string | null };
-  pandoc: { available: boolean };
 }
 
 export async function compilePapers(
@@ -47,7 +43,7 @@ export async function compilePapers(
     return [];
   }
 
-  const env = detectEnv();
+  const env = detectEnvironment();
   const results: CompileResult[] = [];
 
   addEvent(projectId, 'step-6', 'log', `📦 ${papers.length} 套试卷待编译/转换`);
@@ -88,7 +84,7 @@ export async function compilePapers(
     // Step 2: Convert if needed
     if (outputType !== 'latex' && env.pandoc.available) {
       const srcTex = join(outputDir, basename(paper.filepath));
-      const { outPath, errors: convErrors } = convertFile(srcTex, outputDir, outputType);
+      const { outPath, errors: convErrors } = convertFile(srcTex, outputDir, outputType, env.pandoc.executable!);
       if (outPath) result.outputFiles.push(outPath);
       result.errors.push(...convErrors);
 
@@ -134,6 +130,7 @@ export async function compilePapers(
 function compileLatexFile(texPath: string, outputDir: string, env: EnvInfo): { pdfPath?: string; errors: string[] } {
   const errors: string[] = [];
   const engine = env.latex.engine!;
+  const executable = env.latex.executable!;
   const baseName = basename(texPath, '.tex');
 
   // Copy tex to output dir
@@ -141,17 +138,16 @@ function compileLatexFile(texPath: string, outputDir: string, env: EnvInfo): { p
   if (texPath !== workTex) copyFileSync(texPath, workTex);
 
   try {
-    const cmd = engine === 'tectonic'
-      ? `tectonic "${workTex}" --outdir "${outputDir}"`
+    const args = engine === 'tectonic'
+      ? [workTex, '--outdir', outputDir]
       : engine === 'latexmk'
-        ? `latexmk -xelatex -interaction=nonstopmode -halt-on-error -outdir="${outputDir}" "${workTex}"`
-        : `xelatex -interaction=nonstopmode -halt-on-error -output-directory="${outputDir}" "${workTex}"`;
-
-    execSync(cmd, { encoding: 'utf-8', timeout: 60000, cwd: outputDir, windowsHide: true });
+        ? ['-xelatex', '-interaction=nonstopmode', '-halt-on-error', `-outdir=${outputDir}`, workTex]
+        : ['-interaction=nonstopmode', '-halt-on-error', `-output-directory=${outputDir}`, workTex];
+    execFileSync(executable, args, { encoding: 'utf-8', timeout: 60000, cwd: outputDir, windowsHide: true });
 
     // Run twice for cross-references
     if (engine === 'xelatex') {
-      execSync(`xelatex -interaction=nonstopmode -output-directory="${outputDir}" "${workTex}"`,
+      execFileSync(executable, ['-interaction=nonstopmode', `-output-directory=${outputDir}`, workTex],
         { timeout: 60000, cwd: outputDir, windowsHide: true });
     }
 
@@ -177,7 +173,7 @@ function compileLatexFile(texPath: string, outputDir: string, env: EnvInfo): { p
 }
 
 // ====== Pandoc Conversion ======
-function convertFile(texPath: string, outputDir: string, format: string): { outPath?: string; errors: string[] } {
+function convertFile(texPath: string, outputDir: string, format: string, pandocExecutable: string): { outPath?: string; errors: string[] } {
   const errors: string[] = [];
   const baseName = basename(texPath, '.tex');
 
@@ -195,11 +191,10 @@ function convertFile(texPath: string, outputDir: string, format: string): { outP
     const outExt = format === 'docx' ? 'docx' : 'md';
     const outPath = join(outputDir, `${baseName}.${outExt}`);
 
-    const cmd = format === 'docx'
-      ? `pandoc "${convTex}" -o "${outPath}"`
-      : `pandoc "${convTex}" -o "${outPath}" -t gfm --wrap=none --from=latex+raw_tex`;
-
-    execSync(cmd, { encoding: 'utf-8', timeout: 30000, windowsHide: true });
+    const args = format === 'docx'
+      ? [convTex, '-o', outPath]
+      : [convTex, '-o', outPath, '-t', 'gfm', '--wrap=none', '--from=latex+raw_tex'];
+    execFileSync(pandocExecutable, args, { encoding: 'utf-8', timeout: 30000, windowsHide: true });
 
     if (existsSync(outPath)) {
       // Check score count
@@ -236,16 +231,4 @@ async function verifyConversion(texSource: string, convertedFile: string, format
     }, { maxTokens: 2500 });
     return validation.output.status === 'ok' && validation.output.passed;
   } catch { return false; }
-}
-
-// ====== Env Detection ======
-function detectEnv(): EnvInfo {
-  const env: EnvInfo = { latex: { available: false, engine: null }, pandoc: { available: false } };
-  for (const engine of ['xelatex', 'latexmk', 'tectonic']) {
-    try { execSync(`${engine} --version`, { timeout: 5000, windowsHide: true }); env.latex = { available: true, engine }; break; }
-    catch { /* next */ }
-  }
-  try { execSync('pandoc --version', { timeout: 5000, windowsHide: true }); env.pandoc.available = true; }
-  catch { /* no pandoc */ }
-  return env;
 }

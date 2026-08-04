@@ -1,4 +1,4 @@
-import { execSync, exec } from 'node:child_process';
+import { execFileSync, exec } from 'node:child_process';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import { join, basename, extname } from 'node:path';
 import { isConfigured } from './ai.js';
@@ -183,7 +183,7 @@ async function parseDocx(file: FileRecord, env: EnvInfo, warnings: string[]): Pr
       const tmpPath = file.filepath.replace(/\.docx$/i, '_tmp');
       const outPath = `${tmpPath}.tex`;
 
-      execSync(`pandoc "${file.filepath}" -o "${outPath}"`, {
+      execFileSync(env.pandoc.executable!, [file.filepath, '-o', outPath], {
         encoding: 'utf-8',
         timeout: 30000,
         windowsHide: true,
@@ -216,7 +216,7 @@ async function parseDoc(file: FileRecord, env: EnvInfo, warnings: string[]): Pro
       const outDir = join(file.filepath, '..');
       const sofficePath = env.soffice.path!;
 
-      execSync(`"${sofficePath}" --headless --convert-to docx --outdir "${outDir}" "${file.filepath}"`, {
+      execFileSync(sofficePath, ['--headless', '--convert-to', 'docx', '--outdir', outDir, file.filepath], {
         encoding: 'utf-8',
         timeout: 60000,
         windowsHide: true,
@@ -264,7 +264,7 @@ async function parseMd(file: FileRecord, env: EnvInfo, warnings: string[]): Prom
   if (env.pandoc.available) {
     try {
       const outPath = file.filepath.replace(/\.(md|markdown|txt)$/i, '.tex');
-      execSync(`pandoc "${file.filepath}" -o "${outPath}"`, {
+      execFileSync(env.pandoc.executable!, [file.filepath, '-o', outPath], {
         encoding: 'utf-8',
         timeout: 15000,
         windowsHide: true,
