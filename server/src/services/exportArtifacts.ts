@@ -26,7 +26,7 @@ function assertAudience(type: ArtifactType, audience: ExportAudience): void {
 export function renderMarkdown(paper: CanonicalExportPaper, type: ArtifactType, audience: ExportAudience): string {
   assertAudience(type, audience);
   const includeAnswer = audience !== 'student' && type !== 'question_paper';
-  const lines = [`# ${paper.title}`, '', `时长：${paper.durationMinutes} 分钟　总分：${paper.totalScore} 分`, ''];
+  const lines = [`# ${paper.title}`, '', `时长：${paper.durationMinutes} 分钟；总分：${paper.totalScore} 分`, ''];
   paper.questions.forEach((q) => {
     lines.push(`## ${q.number}. ${textOf(q.stem)}（${q.score} 分）`);
     for (const option of q.options ?? []) lines.push(`- ${option.id}. ${textOf(option.content)}`);

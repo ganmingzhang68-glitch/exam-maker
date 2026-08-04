@@ -479,3 +479,25 @@ npm run lint
 - 未解决问题与“需要确认”项。
 
 不得以“代码路径存在”代替“实际运行可用”；任何未安装工具、未获外部数据发送授权、未执行真实编译/打开的能力都必须标记“需要确认”。
+# 2026-08-04 结构化链路接入状态
+
+本节记录实际实现与测试状态；未执行的真实模型或 LaTeX 编译不会标记为通过。
+
+| 子阶段 | 状态 | 验证 |
+|---|---|---|
+| PromptVersion / AiRun 留痕与有限修复重试 | 已完成 | `promptRunnerPersistence.test.ts` |
+| 结构化答案候选与答案对齐 | 已完成 | `answerAlignmentService.test.ts`、`answerAlignmentMigration.test.ts` |
+| 文档语义分块与 token budget | 已完成 | `documentChunking.test.ts` |
+| 统一导出与 audience 后端隔离 | 已完成 | `exportArtifacts.test.ts`、`exportAuthorizationApi.test.ts` |
+| 单套试卷脱敏 fixture E2E | 已完成 | `questionGenerationPipelineE2E.test.ts` |
+| 真实模型 smoke | 需要环境确认 | 默认跳过；设置 `RUN_LIVE_AI_TESTS=1` 及 AI key 后执行 |
+| LaTeX PDF 编译 | 运行时检测 | 仅在检测到 `xelatex` 时执行并断言 PDF；缺失时明确记为未编译 |
+
+可重复执行命令：
+
+```powershell
+npm run question-generation:e2e -w @exam-maker/server
+$env:RUN_LIVE_AI_TESTS='1'; npm test -w @exam-maker/server -- liveStructuredPrompt.smoke.test.ts
+```
+
+E2E 的生成阶段使用显式标注的 `deterministic-fixture`，用于验证结构、持久化、权限与导出，不代表真实模型成功率。真实首次 Schema 通过率和修复后通过率只有运行 live smoke 后才能报告。

@@ -82,7 +82,7 @@ export async function alignSourceQuestionAnswers(generationJobId: number, source
       db.update(schema.sourceQuestions).set({
         rawAnswer: alignment.alignmentStatus === 'matched' ? alignment.normalizedAnswer : null,
         alignmentConfidence: alignment.confidence,
-        teacherReviewStatus: alignment.requiresTeacherReview ? 'needs_alignment_review' : 'aligned',
+        teacherReviewStatus: alignment.requiresTeacherReview ? 'needs_alignment' : 'confirmed',
         updatedAt: new Date().toISOString(),
       }).where(eq(schema.sourceQuestions.id, alignment.sourceQuestionId)).run();
     }
