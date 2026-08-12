@@ -47,6 +47,8 @@ function scalar(result: { value: number } | undefined): number {
 }
 
 function courseSummary(course: CourseRow) {
+  const classCount = scalar(db.select({ value: count() }).from(schema.teachingClasses)
+    .where(and(eq(schema.teachingClasses.courseId, course.id), eq(schema.teachingClasses.status, 'active'))).get());
   const materialCount = scalar(db.select({ value: count() }).from(schema.sourceDocuments)
     .where(eq(schema.sourceDocuments.courseId, course.id)).get());
   const questionCount = scalar(db.select({ value: count() }).from(schema.questions)
@@ -69,7 +71,7 @@ function courseSummary(course: CourseRow) {
     .innerJoin(schema.papers, eq(schema.exams.paperId, schema.papers.id))
     .where(and(paperCondition, eq(schema.attempts.status, 'graded'))).get());
   return {
-    classCount: 0,
+    classCount,
     materialCount: Math.max(materialCount, parseMaterialIds(course.materialDocumentIds).length),
     questionCount,
     paperCount,

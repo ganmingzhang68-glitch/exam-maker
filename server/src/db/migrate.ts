@@ -10,6 +10,7 @@ import { answerAlignmentMigration } from './migrations/007_answer_alignment.js';
 import { secureExportArtifactsMigration } from './migrations/008_secure_export_artifacts.js';
 import { similarQuestionPipelineMigration } from './migrations/009_similar_question_pipeline.js';
 import { courseManagementMigration } from './migrations/010_course_management.js';
+import { classEnrollmentMigration } from './migrations/011_class_enrollment.js';
 
 interface Migration {
   id: string;
@@ -27,6 +28,7 @@ const migrations: Migration[] = [
   secureExportArtifactsMigration,
   similarQuestionPipelineMigration,
   courseManagementMigration,
+  classEnrollmentMigration,
 ];
 
 export function runMigrations(database: Database = rawDb): void {

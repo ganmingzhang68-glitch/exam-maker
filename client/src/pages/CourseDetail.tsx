@@ -48,7 +48,7 @@ const CourseDetail: React.FC = () => {
       <Card>
         <Tabs items={[
           { key: 'overview', label: '课程概览', children: <Descriptions column={1} bordered items={[{ key: 'teacher', label: '授课教师', children: course.instructorName || '未设置' }, { key: 'semester', label: '学期', children: course.semester || '未设置' }, { key: 'description', label: '课程说明', children: course.description || '暂无说明' }]} /> },
-          { key: 'classes', label: '班级', children: placeholder('班级') },
+          { key: 'classes', label: '班级', children: placeholder('班级', <Button onClick={() => navigate(`/classes?courseId=${course.id}`)}>查看课程班级</Button>) },
           { key: 'materials', label: '资料', children: placeholder('课程资料', <Button onClick={() => navigate('/projects/new')}>导入真题资料</Button>) },
           { key: 'questions', label: '题库', children: placeholder('课程题库', <Button onClick={() => navigate('/questions')}>进入题库</Button>) },
           { key: 'papers', label: '试卷', children: placeholder('课程试卷', <Button onClick={() => navigate('/papers')}>进入试卷库</Button>) },

@@ -27,6 +27,36 @@ export const courses = sqliteTable('courses', {
   ownerNameUnique: uniqueIndex('courses_owner_name_unique').on(table.ownerUserId, table.name),
 }));
 
+export const teachingClasses = sqliteTable('teaching_classes', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  courseId: integer('course_id').notNull().references(() => courses.id, { onDelete: 'restrict' }),
+  teacherUserId: integer('teacher_user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),
+  name: text('name').notNull(),
+  semester: text('semester'),
+  status: text('status', { enum: ['active', 'archived'] }).notNull().default('active'),
+  archivedAt: text('archived_at'),
+  createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
+  updatedAt: text('updated_at').notNull().default(sql`(datetime('now'))`),
+}, (table) => ({
+  courseNameUnique: uniqueIndex('teaching_classes_course_name_unique').on(table.courseId, table.name),
+  teacherStatusIdx: index('teaching_classes_teacher_status_idx').on(table.teacherUserId, table.status),
+}));
+
+export const enrollments = sqliteTable('enrollments', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  classId: integer('class_id').notNull().references(() => teachingClasses.id, { onDelete: 'cascade' }),
+  studentId: integer('student_id').notNull().references(() => users.id, { onDelete: 'restrict' }),
+  status: text('status', { enum: ['active', 'removed'] }).notNull().default('active'),
+  joinedAt: text('joined_at').notNull().default(sql`(datetime('now'))`),
+  removedAt: text('removed_at'),
+  createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
+  updatedAt: text('updated_at').notNull().default(sql`(datetime('now'))`),
+}, (table) => ({
+  classStudentUnique: uniqueIndex('enrollments_class_student_unique').on(table.classId, table.studentId),
+  classStatusIdx: index('enrollments_class_status_idx').on(table.classId, table.status),
+  studentStatusIdx: index('enrollments_student_status_idx').on(table.studentId, table.status),
+}));
+
 export const projects = sqliteTable('projects', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   title: text('title').notNull(),

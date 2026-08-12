@@ -107,6 +107,42 @@ export const courseListQuerySchema = z.object({
   search: z.string().trim().max(200).optional(),
 }).strict();
 
+// ============ Class and enrollment management ============
+export const teachingClassStatusSchema = z.enum(['active', 'archived']);
+export const enrollmentStatusSchema = z.enum(['active', 'removed']);
+
+export const createTeachingClassSchema = z.object({
+  courseId: z.number().int().positive(),
+  name: z.string().trim().min(1, '班级名称不能为空').max(200),
+  semester: z.string().trim().max(100).nullable().optional(),
+  status: teachingClassStatusSchema.default('active'),
+}).strict();
+
+export const updateTeachingClassSchema = z.object({
+  name: z.string().trim().min(1, '班级名称不能为空').max(200).optional(),
+  semester: z.string().trim().max(100).nullable().optional(),
+  status: teachingClassStatusSchema.optional(),
+}).strict().refine((value) => Object.keys(value).length > 0, '至少提供一个要修改的字段');
+
+export const teachingClassListQuerySchema = z.object({
+  courseId: z.coerce.number().int().positive().optional(),
+  status: teachingClassStatusSchema.optional(),
+  search: z.string().trim().max(200).optional(),
+}).strict();
+
+export const studentSearchQuerySchema = z.object({
+  q: z.string().trim().max(200).default(''),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+}).strict();
+
+export const addEnrollmentsSchema = z.object({
+  studentIds: z.array(z.number().int().positive()).min(1).max(500),
+}).strict().refine((value) => new Set(value.studentIds).size === value.studentIds.length, '学生 ID 不能重复');
+
+export const importEnrollmentsSchema = z.object({
+  studentIdentifiers: z.array(z.string().trim().min(1).max(320)).min(1).max(1000),
+}).strict();
+
 export const reviewQuestionSchema = z.object({
   status: z.enum(['reviewed', 'rejected']),
 });

@@ -131,6 +131,47 @@ export interface CourseDetail extends CourseRecord {
   summary: CourseSummary;
 }
 
+export type TeachingClassStatus = 'active' | 'archived';
+export type EnrollmentStatus = 'active' | 'removed';
+
+export interface TeachingClass {
+  id: number;
+  courseId: number;
+  teacherUserId: number;
+  name: string;
+  semester: string | null;
+  status: TeachingClassStatus;
+  archivedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  courseName: string;
+  studentCount: number;
+}
+
+export interface EnrollmentStudent extends Pick<User, 'id' | 'username' | 'email'> {
+  enrollmentId: number;
+  enrollmentStatus: EnrollmentStatus;
+  joinedAt: string;
+  removedAt: string | null;
+  examCount: number;
+  completedExamCount: number;
+}
+
+export interface TeachingClassDetail extends TeachingClass {
+  students: EnrollmentStudent[];
+}
+
+export interface StudentSearchResult extends Pick<User, 'id' | 'username' | 'email'> {
+  enrollmentStatus: EnrollmentStatus | null;
+}
+
+export interface EnrollmentImportResult {
+  added: number[];
+  restored: number[];
+  alreadyActive: number[];
+  missing: string[];
+}
+
 // ============ Auth ============
 export interface LoginRequest {
   username: string;
