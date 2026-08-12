@@ -20,10 +20,25 @@ export const classificationOutputSchema = z.object({
 }).strict();
 
 export const classificationPrompt: PromptDefinition<typeof classificationInputSchema, typeof classificationOutputSchema> = {
-  id: 'classification_prompt', version: '1.0.0', stage: 'question_classification',
-  task: '只把题目关联到输入提供的考点树，并评估认知层级和难度。不得创建新考点，不得覆盖教师锁定分类；没有学生统计时难度来源必须是 predicted。',
+  id: 'classification_prompt', version: '1.0.1', stage: 'question_classification',
+  task: '只把题目关联到输入提供的考点树，并评估认知层级和难度。不得创建新考点，不得覆盖教师锁定分类；没有学生统计时难度来源必须是 predicted。difficultyLevel 只能是 basic、medium、hard，禁止使用 intermediate。输出前必须检查 JSON 括号完整且可被标准 JSON.parse 解析。',
   inputSchema: classificationInputSchema, outputSchema: classificationOutputSchema,
-  outputContract: { status: 'ok|uncertain', classifications: 'QuestionClassification[]', issues: 'Issue[]', additionalProperties: false },
+  outputContract: {
+    status: 'ok|uncertain',
+    classifications: [{
+      questionId: 'string',
+      knowledgePoints: [{ knowledgePointId: 'string', role: 'primary|secondary', confidence: 'number 0..1', evidence: 'Evidence[]' }],
+      cognitiveLevel: 'remember|understand|apply|analyze|evaluate|create',
+      difficulty: {
+        difficultyLevel: 'basic|medium|hard', difficultyScore: 'number 0..1',
+        difficultySource: 'predicted|teacher_adjusted|empirical', difficultyReason: 'string',
+        confidence: 'number 0..1', empiricalSampleSize: 'positive integer|null',
+      },
+      status: 'classified|uncertain',
+    }],
+    issues: 'Issue[]',
+    additionalProperties: false,
+  },
   splitInput: input => ({ trustedContext: { taxonomyNodes: input.taxonomyNodes, lockedClassifications: input.lockedClassifications }, untrustedData: { questions: input.questions } }),
   examples: {
     correct: { status: 'ok', classifications: [{ questionId: 'q-1', knowledgePoints: [{ knowledgePointId: 'kp-1', role: 'primary', confidence: 0.9, evidence: [{ sourceDocumentId: 10, pageNumber: 1, blockId: 'q1', quote: '解释核心概念' }] }], cognitiveLevel: 'understand', difficulty: { difficultyLevel: 'basic', difficultyScore: 0.25, difficultySource: 'predicted', difficultyReason: '单一概念解释', confidence: 0.81, empiricalSampleSize: null }, status: 'classified' }], issues: [] },

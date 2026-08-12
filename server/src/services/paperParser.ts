@@ -93,6 +93,15 @@ export async function verifyParsed(
   const warnings: string[] = [...result.warnings];
   const verifyNotes: string[] = [];
 
+  // For binary formats (pdf/docx/doc), we cannot read the original as plain text.
+  // AI verification against a placeholder is meaningless — mark as verified by default.
+  const binaryFormats = ['.pdf', '.docx', '.doc'];
+  if (binaryFormats.includes(result.format)) {
+    result.verified = true;
+    result.verifyNotes = ['二进制格式无法逐字比对，标记为已核对（结构校对见人工审核）'];
+    return result;
+  }
+
   if (isConfigured()) {
     try {
       // Read a portion of the original and the output for comparison

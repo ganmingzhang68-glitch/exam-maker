@@ -13,6 +13,7 @@ import {
   FileDoneOutlined,
   CalendarOutlined,
   SolutionOutlined,
+  RobotOutlined,
 } from '@ant-design/icons';
 import { useAuthStore } from '../store/authStore';
 
@@ -30,6 +31,7 @@ const AppLayout: React.FC = () => {
     : [
       { key: '/', icon: <ProjectOutlined />, label: '出卷项目' },
       { key: '/projects/new', icon: <PlusOutlined />, label: '新建项目' },
+      { key: '/questions/generate', icon: <RobotOutlined />, label: '快速仿题' },
       { key: '/questions/review', icon: <AuditOutlined />, label: 'AI 题目审核' },
       { key: '/questions', icon: <DatabaseOutlined />, label: '教师题库' },
       { key: '/papers', icon: <FileDoneOutlined />, label: '试卷管理' },
@@ -40,6 +42,8 @@ const AppLayout: React.FC = () => {
     ? '/student/exams'
     : location.pathname.startsWith('/questions/review')
     ? '/questions/review'
+    : location.pathname.startsWith('/questions/generate')
+    ? '/questions/generate'
     : location.pathname.startsWith('/questions/') || location.pathname === '/questions'
       ? '/questions'
       : location.pathname.startsWith('/papers')

@@ -103,7 +103,7 @@ export async function assignDifficulty(
 }
 
 // ====== Phase 1: Build Slots ======
-function buildSlots(
+export function buildSlots(
   template: { sections: Array<{ type: string; count: number; pointsPerQuestion: number }> },
   blueprintEntries: Array<{ difficulty: string; points: number; no: string }>
 ): QuestionSlot[] {
@@ -132,20 +132,16 @@ function buildSlots(
         else if (questionCounter > slots.length * 0.85) difficulty = '难';
       }
 
-      // For large-points questions, potentially split into sub-slots
-      if (section.pointsPerQuestion >= 10) {
-        // Split large questions into sub-parts for finer difficulty control
-        const splitSlots = splitLargeQuestion(section.type, q, section.pointsPerQuestion, difficulty);
-        slots.push(...splitSlots);
-      } else {
-        slots.push({
-          sectionType: section.type,
-          sectionIndex,
-          questionIndex: q,
-          score: section.pointsPerQuestion,
-          difficulty,
-        });
-      }
+      // One assessment-template question is one generation slot. Difficulty
+      // accounting must not silently multiply a large question into several
+      // independently generated questions.
+      slots.push({
+        sectionType: section.type,
+        sectionIndex,
+        questionIndex: q,
+        score: section.pointsPerQuestion,
+        difficulty,
+      });
     }
   }
 
@@ -250,11 +246,22 @@ async function tryAdjustWithAI(
     }, { maxTokens: 4000 });
     const output = planned.output;
     const plannedTotal = output.slots.reduce((sum, slot) => sum + slot.score, 0);
-    if (output.status === 'ok' && output.slots.length === result.slots.length && Math.abs(plannedTotal - result.totalScore) < 1e-6) {
-      result.slots.forEach((slot, index) => {
-        slot.difficulty = normalizeDifficulty(output.slots[index].difficulty.difficultyLevel);
+    const expectedQuestionCount = template.sections.reduce((sum, section) => sum + section.count, 0);
+    if (output.status === 'ok' && output.slots.length === expectedQuestionCount && Math.abs(plannedTotal - result.totalScore) < 1e-6) {
+      const sectionQuestionCounts = new Map<number, number>();
+      const plannedSlots: QuestionSlot[] = output.slots.map(slot => {
+        const sectionIndex = Math.max(0, Number(slot.sectionId.match(/(\d+)$/)?.[1] ?? 1) - 1);
+        const questionIndex = (sectionQuestionCounts.get(sectionIndex) ?? 0) + 1;
+        sectionQuestionCounts.set(sectionIndex, questionIndex);
+        return {
+          sectionType: template.sections[sectionIndex]?.type ?? 'subjective',
+          sectionIndex,
+          questionIndex,
+          score: slot.score,
+          difficulty: normalizeDifficulty(slot.difficulty.difficultyLevel),
+        };
       });
-      return computeAssignment(result.slots, target, result.totalScore);
+      return computeAssignment(plannedSlots, target, result.totalScore);
     }
   } catch (err) {
     addEvent(projectId, 'step-4', 'log',
@@ -422,8 +429,9 @@ function generateDifficultyMd(
 
 // ====== Helpers ======
 function normalizeDifficulty(d: string): QuestionSlot['difficulty'] {
-  if (d.startsWith('基础') || d === '简单') return '基础';
-  if (d.startsWith('中等')) return '中等';
-  if (d.startsWith('难')) return '难';
+  const normalized = d.trim().toLowerCase();
+  if (normalized === 'basic' || normalized === 'easy' || d.startsWith('基础') || d === '简单') return '基础';
+  if (normalized === 'medium' || normalized === 'intermediate' || d.startsWith('中等')) return '中等';
+  if (normalized === 'hard' || d.startsWith('难')) return '难';
   return '中等';
 }

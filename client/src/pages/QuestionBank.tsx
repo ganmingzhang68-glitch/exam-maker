@@ -137,7 +137,11 @@ const QuestionBank: React.FC<QuestionBankProps> = ({ reviewMode = false }) => {
       dataIndex: 'sourceFileName',
       width: 170,
       ellipsis: true,
-      render: (filename: string | null, record) => filename || record.sourceProjectTitle || '手工录入',
+      render: (filename: string | null, record) => {
+        const similarJobId = record.metadata?.similarQuestionJobId;
+        if (typeof similarJobId === 'number') return `快速仿题 #${similarJobId}`;
+        return filename || record.sourceProjectTitle || '手工录入';
+      },
     },
     {
       title: '状态',

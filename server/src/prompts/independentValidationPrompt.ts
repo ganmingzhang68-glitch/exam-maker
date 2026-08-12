@@ -1,6 +1,11 @@
 import { z } from 'zod';
 import { evidenceSchema, promptIssueSchema, promptStatusSchema, type PromptDefinition } from './core.js';
 
+const validationEvidenceListSchema = z.preprocess((value) => {
+  if (!Array.isArray(value)) return value;
+  return value.filter(item => evidenceSchema.safeParse(item).success);
+}, z.array(evidenceSchema));
+
 export const independentValidationInputSchema = z.object({
   scope: z.enum(['document_fidelity', 'classification', 'template', 'answer', 'paper_quality', 'export_integrity']),
   canonicalObject: z.record(z.unknown()),
@@ -11,7 +16,7 @@ export const independentValidationInputSchema = z.object({
 
 export const independentValidationOutputSchema = z.object({
   status: promptStatusSchema, passed: z.boolean(),
-  findings: z.array(z.object({ code: z.string().min(1), severity: z.enum(['info', 'warning', 'error', 'critical']), message: z.string().min(1), entityType: z.string().nullable(), entityId: z.string().nullable(), evidence: z.array(evidenceSchema), details: z.record(z.unknown()) }).strict()),
+  findings: z.array(z.object({ code: z.string().min(1), severity: z.enum(['info', 'warning', 'error', 'critical']), message: z.string().min(1), entityType: z.string().nullable(), entityId: z.string().nullable(), evidence: validationEvidenceListSchema, details: z.record(z.unknown()) }).strict()),
   metrics: z.record(z.number()), issues: z.array(promptIssueSchema),
 }).strict().superRefine((value, ctx) => {
   if (value.passed && value.findings.some(f => f.severity === 'error' || f.severity === 'critical')) {
@@ -20,7 +25,7 @@ export const independentValidationOutputSchema = z.object({
 });
 
 export const independentValidationPrompt: PromptDefinition<typeof independentValidationInputSchema, typeof independentValidationOutputSchema> = {
-  id: 'independent_validation_prompt', version: '1.0.0', stage: 'paper_validation',
+  id: 'independent_validation_prompt', version: '1.0.1', stage: 'paper_validation',
   task: '只独立报告输入对象的问题，不修改题面、答案、rubric、模板或细目表。不得推翻确定性检查；存在 error/critical finding 时 passed 必须为 false。',
   inputSchema: independentValidationInputSchema, outputSchema: independentValidationOutputSchema,
   outputContract: { status: 'ok|uncertain', passed: 'boolean', findings: 'ValidationFinding[]', metrics: 'Record<string,number>', issues: 'Issue[]', additionalProperties: false },

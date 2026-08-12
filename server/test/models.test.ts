@@ -16,9 +16,13 @@ test('foundation migration preserves old users and projects', async () => {
   assert.deepEqual(database.exec('SELECT id, username, role FROM users')[0].values, [[7, 'legacy_teacher', 'teacher']]);
   assert.deepEqual(database.exec('SELECT id, user_id FROM projects')[0].values, [[9, 7]]);
   const tables = new Set(database.exec("SELECT name FROM sqlite_master WHERE type='table'")[0].values.flat().map(String));
-  for (const name of ['questions', 'papers', 'paper_questions', 'exams', 'exam_assignments', 'attempts', 'answers']) {
+  for (const name of ['questions', 'papers', 'paper_questions', 'exams', 'exam_assignments', 'attempts', 'answers', 'similar_question_jobs', 'similar_question_job_stages']) {
     assert.ok(tables.has(name), `missing table ${name}`);
   }
+  const aiRunColumns = new Set(database.exec('PRAGMA table_info(ai_runs)')[0].values.map(row => String(row[1])));
+  const generatedColumns = new Set(database.exec('PRAGMA table_info(generated_questions)')[0].values.map(row => String(row[1])));
+  assert.ok(aiRunColumns.has('similar_question_job_id'));
+  assert.ok(generatedColumns.has('similar_question_job_id'));
   assert.equal(database.exec('PRAGMA foreign_key_check').length, 0);
   database.close();
 });

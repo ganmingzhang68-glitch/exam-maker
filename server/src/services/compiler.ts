@@ -31,12 +31,11 @@ export async function compilePapers(
   const outputDir = join(dir, 'output');
   if (!existsSync(outputDir)) mkdirSync(outputDir, { recursive: true });
 
+  const deliverableTypes = new Set(['generated_paper', 'student_paper', 'answer_key', 'rubric']);
   const papers = db.select().from(schema.projectFiles)
-    .where(and(
-      eq(schema.projectFiles.projectId, projectId),
-      eq(schema.projectFiles.type, 'generated_paper'),
-    ))
-    .all();
+    .where(eq(schema.projectFiles.projectId, projectId))
+    .all()
+    .filter(file => deliverableTypes.has(file.type));
 
   if (papers.length === 0) {
     addEvent(projectId, 'step-6', 'log', '⚠ 未找到生成的试卷文件');
@@ -46,8 +45,8 @@ export async function compilePapers(
   const env = detectEnvironment();
   const results: CompileResult[] = [];
 
-  addEvent(projectId, 'step-6', 'log', `📦 ${papers.length} 套试卷待编译/转换`);
-  addEvent(projectId, 'step-6', 'log', `🎯 输出格式: ${outputType}`);
+  addEvent(projectId, 'step-6', 'log', `📦 ${papers.length} 个试卷制品待编译/转换`);
+  addEvent(projectId, 'step-6', 'log', `🎯 生成 LaTeX/PDF、DOCX、Markdown（首选格式: ${outputType}）`);
 
   for (const paper of papers) {
     const result: CompileResult = {
@@ -81,24 +80,27 @@ export async function compilePapers(
       result.outputFiles.push(texCopy);
     }
 
-    // Step 2: Convert if needed
-    if (outputType !== 'latex' && env.pandoc.available) {
+    // Step 2: Always derive DOCX and Markdown from the same LaTeX paper object.
+    if (env.pandoc.available) {
       const srcTex = join(outputDir, basename(paper.filepath));
-      const { outPath, errors: convErrors } = convertFile(srcTex, outputDir, outputType, env.pandoc.executable!);
-      if (outPath) result.outputFiles.push(outPath);
-      result.errors.push(...convErrors);
+      for (const format of ['docx', 'md']) {
+        const { outPath, errors: convErrors } = convertFile(srcTex, outputDir, format, env.pandoc.executable!);
+        if (outPath) result.outputFiles.push(outPath);
+        result.errors.push(...convErrors);
 
-      if (outPath) {
-        addEvent(projectId, 'step-6', 'log', `  🔄 ${outputType}: ${basename(outPath)} ✅`);
-        // Post-conversion verify
-        const verified = await verifyConversion(paper.filepath, outPath, outputType);
-        addEvent(projectId, 'step-6', 'log', `  ${verified ? '✅' : '⚠'} 转换核对${verified ? ' PASS' : ' 发现差异'}`);
+        if (outPath) {
+          addEvent(projectId, 'step-6', 'log', `  🔄 ${format}: ${basename(outPath)} ✅`);
+          const verified = await verifyConversion(paper.filepath, outPath, format);
+          addEvent(projectId, 'step-6', 'log', `  ${verified ? '✅' : '⚠'} ${format} 完整性核对${verified ? ' PASS' : ' 发现差异'}`);
+        }
       }
-    } else if (outputType !== 'latex' && !env.pandoc.available) {
-      addEvent(projectId, 'step-6', 'log', `  ⚠ pandoc 未安装，无法转为 ${outputType}`);
+    } else {
+      result.errors.push('pandoc 未安装，无法生成 DOCX 和 Markdown');
+      addEvent(projectId, 'step-6', 'log', '  ⚠ pandoc 未安装，无法生成 DOCX 和 Markdown');
     }
 
-    result.success = result.outputFiles.length > 0;
+    result.success = ['.pdf', '.docx', '.md'].every(ext => result.outputFiles.some(path => path.endsWith(ext)));
+    if (!result.success) result.errors.push('交付格式不完整：必须同时生成 PDF、DOCX 和 Markdown');
 
     // Save output files as project files
     for (const outFile of result.outputFiles) {
@@ -110,9 +112,15 @@ export async function compilePapers(
         ))
         .get();
       if (!existing) {
+        const sourceMetadata = parseMetadata(paper.metadata);
         db.insert(schema.projectFiles).values({
           projectId, type: 'final_output', filename: outName, filepath: outFile,
-          metadata: JSON.stringify({ source: paper.filename, format: outputType }),
+          metadata: JSON.stringify({
+            source: paper.filename,
+            format: outName.split('.').pop(),
+            artifactType: sourceMetadata.artifactType ?? paper.type,
+            audience: sourceMetadata.audience ?? 'teacher',
+          }),
         }).run();
       }
     }
@@ -121,9 +129,14 @@ export async function compilePapers(
   }
 
   const successCount = results.filter(r => r.success).length;
-  addEvent(projectId, 'step-6', 'done', `📊 ${successCount}/${results.length} 套处理完成`);
+  addEvent(projectId, 'step-6', 'done', `📊 ${successCount}/${results.length} 个制品处理完成`);
   saveToDisk();
   return results;
+}
+
+function parseMetadata(raw: string | null): Record<string, unknown> {
+  if (!raw) return {};
+  try { return JSON.parse(raw) as Record<string, unknown>; } catch { return {}; }
 }
 
 // ====== LaTeX Compilation ======
@@ -198,7 +211,7 @@ function convertFile(texPath: string, outputDir: string, format: string, pandocE
 
     if (existsSync(outPath)) {
       // Check score count
-      const origScores = (texPath.match(/\\score\{/g) || []).length;
+      const origScores = (readFileSync(texPath, 'utf-8').match(/\\score\{/g) || []).length;
       const convScores = (content.match(/（\d+分）/g) || []).length;
       if (convScores < origScores) {
         errors.push(`分值丢失: ${origScores}→${convScores}`);

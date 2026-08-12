@@ -4,7 +4,8 @@ import { eq } from 'drizzle-orm';
 import { db, schema, saveToDisk } from '../db/index.js';
 import { AppError } from '../middleware/errorHandler.js';
 import type { AuthRequest } from '../middleware/auth.js';
-import { getProjectDir, addEvent } from './project.js';
+import { addEvent } from './project.js';
+import { getProjectDir } from '../services/workflow.js';
 import { existsSync, mkdirSync } from 'node:fs';
 import { join, extname } from 'node:path';
 
@@ -18,10 +19,14 @@ const storage = multer.diskStorage({
     cb(null, dir);
   },
   filename: (_req, file, cb) => {
-    // Keep original filename, add timestamp to avoid conflicts
+    // Keep original filename, add timestamp to avoid conflicts.
+    // Sanitize to ASCII-safe to avoid Windows unicode path issues.
     const ext = extname(file.originalname);
     const base = file.originalname.slice(0, -ext.length);
-    cb(null, `${base}_${Date.now()}${ext}`);
+    // Replace non-ASCII chars with a safe token, keep extension
+    const safeBase = base.replace(/[^\x20-\x7E]/g, '_').replace(/[\\/:*?"<>|]/g, '_');
+    const safeName = safeBase.length > 0 ? safeBase : `paper_${Date.now()}`;
+    cb(null, `${safeName}_${Date.now()}${ext.toLowerCase()}`);
   },
 });
 

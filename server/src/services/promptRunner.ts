@@ -18,6 +18,7 @@ export interface PromptRunOptions {
   maxRetries?: number;
   timeoutMs?: number;
   generationJobId?: number;
+  similarQuestionJobId?: number;
   stageRunId?: number;
   modelParameters?: Record<string, unknown>;
   transport?: (systemPrompt: string, messages: AiMessage[], options: { maxTokens?: number }) => Promise<PromptTransportResult>;
@@ -28,6 +29,8 @@ export interface PromptRunResult<O> {
   promptVersion: string;
   output: O;
   attempts: number;
+  aiRunId: number;
+  promptVersionId: number;
 }
 
 function hash(value: string): string {
@@ -111,8 +114,9 @@ export async function runStructuredPrompt<I extends z.ZodTypeAny, O extends z.Zo
       response = await withTimeout(transport(rendered.systemPrompt, messages, { maxTokens: options.maxTokens }), timeoutMs);
       const output = parsePromptOutput(definition, response.text);
       const finishedAt = new Date();
-      db.insert(schema.aiRuns).values({
-        generationJobId: options.generationJobId, stageRunId: options.stageRunId, stage: definition.stage,
+      const aiRun = db.insert(schema.aiRuns).values({
+        generationJobId: options.generationJobId, similarQuestionJobId: options.similarQuestionJobId,
+        stageRunId: options.stageRunId, stage: definition.stage,
         promptVersionId, provider: config.provider, model: config.model,
         parameters: JSON.stringify(modelParameters), modelParameters: JSON.stringify(modelParameters), inputHash,
         outputRaw: response.text, outputParsed: JSON.stringify(output), requestId: response.requestId,
@@ -120,15 +124,16 @@ export async function runStructuredPrompt<I extends z.ZodTypeAny, O extends z.Zo
         totalTokens: response.totalTokens ?? ((response.inputTokens ?? 0) + (response.outputTokens ?? 0) || undefined),
         latencyMs: finishedAt.getTime() - startedAt.getTime(), retryCount: attempt,
         startedAt: startedAt.toISOString(), finishedAt: finishedAt.toISOString(), status: 'succeeded',
-      }).run();
-      return { promptId: rendered.id, promptVersion: rendered.version, output, attempts: attempt + 1 };
+      }).returning({ id: schema.aiRuns.id }).get();
+      return { promptId: rendered.id, promptVersion: rendered.version, output, attempts: attempt + 1, aiRunId: aiRun.id, promptVersionId };
     } catch (error) {
       const finishedAt = new Date();
       previousRaw = response?.text ?? '';
       previousError = error instanceof Error ? error.message : String(error);
       const type = errorType(error, previousRaw);
       db.insert(schema.aiRuns).values({
-        generationJobId: options.generationJobId, stageRunId: options.stageRunId, stage: definition.stage,
+        generationJobId: options.generationJobId, similarQuestionJobId: options.similarQuestionJobId,
+        stageRunId: options.stageRunId, stage: definition.stage,
         promptVersionId, provider: config.provider, model: config.model,
         parameters: JSON.stringify(modelParameters), modelParameters: JSON.stringify(modelParameters), inputHash,
         outputRaw: previousRaw || null, requestId: response?.requestId,

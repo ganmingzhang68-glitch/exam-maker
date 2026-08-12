@@ -135,9 +135,51 @@ export const generationJobStages = sqliteTable('generation_job_stages', {
   jobStatusIdx: index('generation_job_stages_job_status_idx').on(table.generationJobId, table.status),
 }));
 
+export const similarQuestionJobs = sqliteTable('similar_question_jobs', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  requestedBy: integer('requested_by').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  course: text('course').notNull(),
+  scope: text('scope'),
+  sourceText: text('source_text').notNull(),
+  sourceAnswer: text('source_answer'),
+  variantsPerQuestion: integer('variants_per_question').notNull().default(1),
+  defaultScore: real('default_score').notNull().default(10),
+  difficultyMode: text('difficulty_mode', { enum: ['same', 'lower', 'higher'] }).notNull().default('same'),
+  currentStage: text('current_stage'),
+  lastSuccessfulStage: text('last_successful_stage'),
+  errorSummary: text('error_summary'),
+  resultJson: text('result_json'),
+  status: text('status', { enum: ['pending', 'running', 'succeeded', 'failed', 'saved'] }).notNull().default('pending'),
+  createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
+  updatedAt: text('updated_at').notNull().default(sql`(datetime('now'))`),
+}, (table) => ({
+  ownerStatusIdx: index('similar_question_jobs_owner_status_idx').on(table.requestedBy, table.status),
+}));
+
+export const similarQuestionJobStages = sqliteTable('similar_question_job_stages', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  jobId: integer('job_id').notNull().references(() => similarQuestionJobs.id, { onDelete: 'cascade' }),
+  stage: text('stage').notNull(),
+  attemptNo: integer('attempt_no').notNull().default(1),
+  inputJson: text('input_json').notNull().default('{}'),
+  outputJson: text('output_json'),
+  errorMessage: text('error_message'),
+  errorStack: text('error_stack'),
+  retryable: integer('retryable', { mode: 'boolean' }).notNull().default(false),
+  status: text('status', { enum: ['running', 'succeeded', 'failed'] }).notNull().default('running'),
+  startedAt: text('started_at'),
+  finishedAt: text('finished_at'),
+  createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
+  updatedAt: text('updated_at').notNull().default(sql`(datetime('now'))`),
+}, (table) => ({
+  stageAttemptUnique: uniqueIndex('similar_question_job_stages_attempt_unique').on(table.jobId, table.stage, table.attemptNo),
+  jobStatusIdx: index('similar_question_job_stages_job_status_idx').on(table.jobId, table.status),
+}));
+
 export const aiRuns = sqliteTable('ai_runs', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   generationJobId: integer('generation_job_id').references(() => generationJobs.id, { onDelete: 'set null' }),
+  similarQuestionJobId: integer('similar_question_job_id').references(() => similarQuestionJobs.id, { onDelete: 'set null' }),
   stageRunId: integer('stage_run_id').references(() => generationJobStages.id, { onDelete: 'set null' }),
   stage: text('stage').notNull(),
   promptVersionId: integer('prompt_version_id').notNull().references(() => promptVersions.id),
@@ -400,6 +442,7 @@ export const generatedQuestions = sqliteTable('generated_questions', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   generationPlanId: integer('generation_plan_id').references(() => generationPlans.id, { onDelete: 'set null' }),
   generationPlanItemId: integer('generation_plan_item_id').references(() => generationPlanItems.id, { onDelete: 'set null' }),
+  similarQuestionJobId: integer('similar_question_job_id').references(() => similarQuestionJobs.id, { onDelete: 'set null' }),
   legacyQuestionId: integer('legacy_question_id').references(() => questions.id, { onDelete: 'set null' }),
   setNo: integer('set_no').notNull().default(1),
   questionType: text('question_type').notNull(),

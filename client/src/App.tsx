@@ -19,6 +19,7 @@ import ExamResults from './pages/ExamResults';
 import AttemptGrading from './pages/AttemptGrading';
 import StudentResult from './pages/StudentResult';
 import NotFound from './pages/NotFound';
+import SimilarQuestionGenerator from './pages/SimilarQuestionGenerator';
 
 const teacherRoles = ['teacher', 'admin'] as const;
 
@@ -61,6 +62,7 @@ const App: React.FC = () => {
         <Route path="/projects/new" element={<TeacherRoute><ProjectNew /></TeacherRoute>} />
         <Route path="/projects/:id" element={<TeacherRoute><ProjectWorkspace /></TeacherRoute>} />
         <Route path="/questions" element={<TeacherRoute><QuestionBank /></TeacherRoute>} />
+        <Route path="/questions/generate" element={<TeacherRoute><SimilarQuestionGenerator /></TeacherRoute>} />
         <Route path="/questions/review" element={<TeacherRoute><QuestionBank reviewMode /></TeacherRoute>} />
         <Route path="/questions/:id/edit" element={<TeacherRoute><QuestionEdit /></TeacherRoute>} />
         <Route path="/papers" element={<TeacherRoute><PaperList /></TeacherRoute>} />

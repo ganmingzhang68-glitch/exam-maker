@@ -20,7 +20,7 @@ const ProtectedRoute: React.FC<Props> = ({ children, allowedRoles }) => {
   if (loading) {
     return (
       <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
-        <Spin size="large" tip="加载中..." />
+        <Spin size="large" aria-label="加载中" />
       </div>
     );
   }

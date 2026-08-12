@@ -87,7 +87,7 @@ const ProjectNew: React.FC = () => {
           layout="vertical"
           onFinish={onFinish}
           initialValues={{
-            nSets: 8, outputType: 'latex', verifyMode: 'auto',
+            nSets: 1, outputType: 'latex', verifyMode: 'auto',
             diffBasic: 60, diffMedium: 30, diffHard: 10,
           }}
         >

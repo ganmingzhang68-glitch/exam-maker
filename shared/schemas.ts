@@ -24,7 +24,7 @@ export const createProjectSchema = z.object({
   course: z.string().min(1, '课程名不能为空'),
   scope: z.string().optional(),
   difficulty: difficultyRatioSchema.default({ basic: 60, medium: 30, hard: 10 }),
-  nSets: z.number().int().min(1).max(50).default(8),
+  nSets: z.number().int().min(1).max(50).default(1),
   outputType: z.enum(['latex', 'docx', 'md']).default('latex'),
   verifyMode: z.enum(['auto', 'computational', 'conceptual', 'mixed']).default('auto'),
 });
@@ -88,6 +88,28 @@ export const positiveIdSchema = z.coerce.number().int().positive();
 export const reviewQuestionSchema = z.object({
   status: z.enum(['reviewed', 'rejected']),
 });
+
+// ============ Similar question generation ============
+export const similarQuestionDifficultyModeSchema = z.enum(['same', 'lower', 'higher']);
+
+export const createSimilarQuestionJobSchema = z.object({
+  course: z.string().trim().min(1, '课程名称不能为空').max(200),
+  scope: z.string().trim().max(5000).nullable().optional(),
+  sourceText: z.string().trim().min(3, '请输入至少一道已有题目').max(200000),
+  sourceAnswer: z.string().trim().max(100000).nullable().optional(),
+  variantsPerQuestion: z.number().int().min(1).max(5).default(1),
+  defaultScore: z.number().positive().max(1000).default(10),
+  difficultyMode: similarQuestionDifficultyModeSchema.default('same'),
+}).strict();
+
+export const similarQuestionJobQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+  offset: z.coerce.number().int().min(0).default(0),
+});
+
+export const saveSimilarQuestionJobSchema = z.object({
+  questionIds: z.array(z.number().int().positive()).min(1).max(100),
+}).strict();
 
 export const paperStatusSchema = z.enum(['draft', 'ready', 'archived']);
 

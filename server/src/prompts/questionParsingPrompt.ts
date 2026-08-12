@@ -3,7 +3,10 @@ import { evidenceSchema, promptIssueSchema, promptStatusSchema, type PromptDefin
 
 const pageSchema = z.object({ pageNumber: z.number().int().positive(), text: z.string(), blockIds: z.array(z.string()) }).strict();
 const parsedPartSchema = z.object({
-  label: z.string().nullable(), rawStem: z.string(), originalScore: z.number().nonnegative().nullable(), confidence: z.number().min(0).max(1),
+  label: z.string().nullable(),
+  rawStem: z.string(),
+  originalScore: z.preprocess(value => value === 0 ? null : value, z.number().positive().nullable()),
+  confidence: z.number().min(0).max(1).default(0),
 }).strict();
 
 export const questionParsingInputSchema = z.object({
@@ -22,7 +25,8 @@ export const questionParsingOutputSchema = z.object({
     originalQuestionNo: z.string().min(1), rawStem: z.string().min(1),
     questionType: z.enum(['single_choice', 'multiple_choice', 'true_false', 'fill_blank', 'short_answer', 'calculation', 'proof', 'essay', 'material', 'code', 'composite', 'unknown']),
     options: z.array(z.object({ id: z.string().min(1), text: z.string().min(1) }).strict()),
-    subquestions: z.array(parsedPartSchema), originalScore: z.number().nonnegative().nullable(),
+    subquestions: z.array(parsedPartSchema),
+    originalScore: z.preprocess(value => value === 0 ? null : value, z.number().positive().nullable()),
     contentReferences: z.array(z.object({ kind: z.enum(['image', 'formula', 'table', 'code', 'material']), reference: z.string().min(1) }).strict()),
     confidence: z.number().min(0).max(1), evidence: z.array(evidenceSchema).min(1),
   }).strict()),
@@ -30,10 +34,20 @@ export const questionParsingOutputSchema = z.object({
 }).strict();
 
 export const questionParsingPrompt: PromptDefinition<typeof questionParsingInputSchema, typeof questionParsingOutputSchema> = {
-  id: 'question_parsing_prompt', version: '1.0.0', stage: 'exam_structure_parsing',
-  task: '只从已识别的试题区段切分原题并保留来源定位。不要生成或推断答案、考点、难度、认知层级。',
+  id: 'question_parsing_prompt', version: '1.0.2', stage: 'exam_structure_parsing',
+  task: '只从已识别的试题区段切分原题并保留来源定位。不要生成或推断答案、考点、难度、认知层级。原文未提供分值时 originalScore 必须为 null，禁止用 0 代替。每个子题只能包含 label、rawStem、originalScore、confidence；confidence 必须是 0 到 1 的数字。',
   inputSchema: questionParsingInputSchema, outputSchema: questionParsingOutputSchema,
-  outputContract: { status: 'ok|uncertain', sourceExamId: 'integer', questions: 'ParsedQuestion[]', issues: 'Issue[]', additionalProperties: false },
+  outputContract: {
+    status: 'ok|uncertain', sourceExamId: 'integer',
+    questions: [{
+      temporaryId: 'string', sourceDocumentId: 'positive integer', pageStart: 'positive integer', pageEnd: 'positive integer',
+      originalQuestionNo: 'string', rawStem: 'string', questionType: 'supported question type',
+      options: [{ id: 'string', text: 'string' }],
+      subquestions: [{ label: 'string|null', rawStem: 'string', originalScore: 'positive number|null', confidence: 'number 0..1' }],
+      originalScore: 'positive number|null', contentReferences: 'ContentReference[]', confidence: 'number 0..1', evidence: 'Evidence[]',
+    }],
+    issues: 'Issue[]', additionalProperties: false,
+  },
   splitInput: input => ({ trustedContext: { sourceExamId: input.sourceExamId, sourceDocumentId: input.sourceDocumentId, questionSections: input.questionSections }, untrustedData: { pages: input.pages } }),
   examples: {
     correct: { status: 'ok', sourceExamId: 20, questions: [{

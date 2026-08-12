@@ -11,3 +11,14 @@ test('independent_validation_prompt cannot pass serious findings', () => {
   const invalid = { ...independentValidationPrompt.examples.correct, passed: true };
   assert.equal(independentValidationOutputSchema.safeParse(invalid).success, false);
 });
+
+test('independent validation discards malformed evidence instead of inventing provenance', () => {
+  const parsed = independentValidationOutputSchema.parse({
+    ...independentValidationPrompt.examples.correct,
+    findings: [{
+      ...independentValidationPrompt.examples.correct.findings[0],
+      evidence: [{ source: 'question', quote: 'unstructured model citation' }],
+    }],
+  });
+  assert.deepEqual(parsed.findings[0].evidence, []);
+});

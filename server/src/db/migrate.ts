@@ -8,6 +8,7 @@ import { questionGenerationDomainMigration } from './migrations/005_question_gen
 import { promptAiRunMetadataMigration } from './migrations/006_prompt_ai_run_metadata.js';
 import { answerAlignmentMigration } from './migrations/007_answer_alignment.js';
 import { secureExportArtifactsMigration } from './migrations/008_secure_export_artifacts.js';
+import { similarQuestionPipelineMigration } from './migrations/009_similar_question_pipeline.js';
 
 interface Migration {
   id: string;
@@ -23,6 +24,7 @@ const migrations: Migration[] = [
   promptAiRunMetadataMigration,
   answerAlignmentMigration,
   secureExportArtifactsMigration,
+  similarQuestionPipelineMigration,
 ];
 
 export function runMigrations(database: Database = rawDb): void {

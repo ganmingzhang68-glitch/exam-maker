@@ -9,15 +9,17 @@
 | 顺序 | 阶段 | 状态 | 已验证结果 |
 |---|---|---|---|
 | 1 | 统一数据模型和 Schema | 已完成（2026-08-03） | 新增共享 Zod 领域模型、Drizzle 表定义、`005_question_generation_domain` 兼容 migration；全量 20 项测试、全仓 build、lint 均通过 |
-| 2 | 真题解析和答案对齐 | 未开始 | — |
-| 3 | 考点体系与分类 | 未开始 | — |
+| 2 | 真题解析和答案对齐 | 部分完成（快速仿题，2026-08-13） | 文本/Markdown 多题切分已接入严格 Schema；来源答案独立对齐仍未接入快速仿题 |
+| 3 | 考点体系与分类 | 部分完成（快速仿题，2026-08-13） | 课程中立的考点提取和一题多考点分类已实测；教师树编辑仍属完整出卷后续阶段 |
 | 4 | 模板和细目表 | 未开始 | — |
 | 5 | GenerationPlan | 未开始 | — |
-| 6 | 生成、答案和评分标准 | 未开始 | — |
-| 7 | 校验 | 未开始 | — |
+| 6 | 生成、答案和评分标准 | 部分完成（快速仿题，2026-08-13） | 题面、答案、rubric 分阶段生成并按稳定 ID 保存；完整 N 套出卷仍未完成 |
+| 7 | 校验 | 部分完成（快速仿题，2026-08-13） | 分值、答案、选项、原创性硬规则和独立 AI 校验已阻断失败结果 |
 | 8 | 统一导出 | 未开始 | — |
-| 9 | 前端接入 | 未开始 | — |
-| 10 | E2E fixture 与测试 | 未开始 | — |
+| 9 | 前端接入 | 部分完成（快速仿题，2026-08-13） | 已新增“快速仿题”文件/文本输入、阶段进度、断点重试、结果和保存审核页面 |
+| 10 | E2E fixture 与测试 | 部分完成（快速仿题，2026-08-13） | 自动 Playwright + 真实 DeepSeek 单题 E2E 54.1 秒通过；Q2.md 三题人工浏览器 E2E 通过 |
+
+P0 基础教师链路修复（2026-08-04）：已完成。`parsing` 状态可启动，默认生成 1 套；空细目表、零生成和不完整导出会失败；`error` 可从最近成功阶段继续；学生卷、答案卷、评分标准分别登记并统一派生 PDF/DOCX/Markdown。真实项目 5 使用 DeepSeek 完成“上传→解析→细目表确认→模板确认→逐题生成→答案/rubric→独立校验→4 类制品导出”，最终状态 `done`，12 个格式产物均通过下载验证。此结果只代表该最小 fixture 的基础兼容链路，不代表上表第 2—10 阶段的完整目标功能已经全部实现。
 
 Prompt 专项（2026-08-04）：已完成全部旧 Prompt 审计，建立 12 个版本化单职责 Prompt、严格 Zod 输入输出、正确/异常示例、注入边界和自动化测试；活跃业务调用已收口到 `promptRunner.ts`。PromptVersion/AiRun 持久化以及答案对齐、蓝图生成阶段的正式接入仍待后续步骤。
 
@@ -51,6 +53,7 @@ Prompt 专项（2026-08-04）：已完成全部旧 Prompt 审计，建立 12 个
 | RC-18 | P2 | Prompt 内联、旧路径并存 | Prompt 无版本，`workflow.ts` 有未使用生成函数，维护歧义 | Prompt registry；标记 legacy，分阶段移除死路径 |
 | RC-19 | P2 | 外部工具探测和执行散落，错误进入 stderr | 环境问题不可结构化诊断 | `toolchain` adapter + structured result |
 | RC-20 | P2 | 当前测试偏题库/考试，缺生成链路 | 控制流、导入、导出回归未被发现 | 增加 pipeline integration、fixture、failure injection 和 export tests |
+| RC-21 | P0 | DeepSeek V4 默认启用 thinking，结构化调用的 token 被 `reasoning_content` 耗尽，而适配器只读取 `content` | 真实 Q2 首次调用 137 秒后得到空 final content，前端长期停在解析中 | DeepSeek 结构化调用显式 `thinking.disabled` + `response_format=json_object`；空 final content 明确失败 |
 
 ## 2. 修复边界
 
@@ -490,8 +493,10 @@ npm run lint
 | 文档语义分块与 token budget | 已完成 | `documentChunking.test.ts` |
 | 统一导出与 audience 后端隔离 | 已完成 | `exportArtifacts.test.ts`、`exportAuthorizationApi.test.ts` |
 | 单套试卷脱敏 fixture E2E | 已完成 | `questionGenerationPipelineE2E.test.ts` |
-| 真实模型 smoke | 需要环境确认 | 默认跳过；设置 `RUN_LIVE_AI_TESTS=1` 及 AI key 后执行 |
-| LaTeX PDF 编译 | 运行时检测 | 仅在检测到 `xelatex` 时执行并断言 PDF；缺失时明确记为未编译 |
+| 真实模型 smoke | 已完成 | DeepSeek 结构化 smoke 实际通过；基础完整工作流项目 5 实际到达 `done` |
+| LaTeX PDF 编译 | 已完成（当前环境） | 项目 5 的学生卷、答案卷、rubric 和教师包均由 XeLaTeX 实际生成 PDF |
+| DOCX 打开验证 | 已完成（当前环境） | 下载 `paper-1.answers.docx` 后由 LibreOffice 打开并转换为 PDF 成功 |
+| 教师下载制品 | 已完成（基础链路） | 经鉴权 API 实际下载学生 PDF、答案 DOCX、评分标准 Markdown；学生卷不含答案/rubric |
 
 可重复执行命令：
 
@@ -500,4 +505,66 @@ npm run question-generation:e2e -w @exam-maker/server
 $env:RUN_LIVE_AI_TESTS='1'; npm test -w @exam-maker/server -- liveStructuredPrompt.smoke.test.ts
 ```
 
-E2E 的生成阶段使用显式标注的 `deterministic-fixture`，用于验证结构、持久化、权限与导出，不代表真实模型成功率。真实首次 Schema 通过率和修复后通过率只有运行 live smoke 后才能报告。
+固定 E2E 的生成阶段仍使用显式标注的 `deterministic-fixture`；另已运行真实 DeepSeek 最小完整链路。真实运行先后暴露并修复了内容块别名、空 evidence blockId、答案阶段证据传递、答案段落泄露、GenerationPlan 认知层级写死和断点恢复问题。该单次成功不能外推为所有课程和文档格式的模型成功率。
+
+## 2026-08-13 快速仿题可靠链路
+
+本轮优先解决教师“在前端输入或上传已有题目，生成同考点但不同形态的新题”的阻断问题。该链路与完整多套出卷项目并存，不删除或替换旧项目工作流。
+
+### 修改文件
+
+- 共享契约：`shared/schemas.ts`、`shared/types.ts`。
+- 数据库：`server/src/db/schema.ts`、`server/src/db/migrations/009_similar_question_pipeline.ts`、`server/src/db/migrate.ts`。
+- 后端：`server/src/services/similarQuestionPipeline.ts`、`server/src/services/similarityValidator.ts`、`server/src/services/ai.ts`、`server/src/services/promptRunner.ts`、`server/src/controllers/similarQuestion.ts`、`server/src/routes/similarQuestion.ts`、`server/src/index.ts`。
+- 前端：`client/src/pages/SimilarQuestionGenerator.tsx`、`client/src/services/similarQuestion.ts`、`client/src/App.tsx`、`client/src/components/Layout.tsx`、`client/src/pages/QuestionBank.tsx`。
+- 测试：`server/test/aiAdapter.test.ts`、`server/test/similarityValidator.test.ts`、`server/test/similarQuestionApi.test.ts`、`server/test/fixtures/similar-question-basic.md`、`scripts/e2e-similar-question.mjs`。
+
+### 数据库变化
+
+- 新增 `similar_question_jobs` 和 `similar_question_job_stages`，保留每阶段输入、输出、attempt、错误和时间。
+- `ai_runs`、`generated_questions` 新增可空 `similar_question_job_id`；旧数据不删除、不回填伪关联。
+- 通过校验的题目先写 `generated_questions`/`rubrics`，教师点击保存后再幂等投影到兼容 `questions` 表，状态为 `generated`（待审核）。
+
+### 新增接口
+
+- `POST /api/similar-question-jobs`：创建并异步启动任务。
+- `GET /api/similar-question-jobs`：列出本人任务。
+- `GET /api/similar-question-jobs/:id`：读取阶段、错误和结果。
+- `POST /api/similar-question-jobs/:id/retry`：从已成功阶段缓存继续。
+- `POST /api/similar-question-jobs/:id/save`：把指定且已通过校验的结果幂等保存到教师审核。
+
+### 实际运行的测试
+
+```powershell
+npm run build
+npm test
+npm run e2e:similar-question
+```
+
+- 全仓生产构建通过；Vite 仅报告 bundle 大小 warning。
+- 后端测试：80 passed、0 failed、1 skipped；跳过项是必须显式开启的 live AI smoke，不冒充通过。
+- 自动 Playwright E2E：真实 DeepSeek，最终任务 `#4`，1 道原题生成 1 道新题并保存为教师审核题 `#33`，54.1 秒通过。
+- 人工 Playwright MCP/CDP E2E：前端文件控件读取 `Q2.md`（3 道题），任务 `#1` 完成 3 道切题、考点分类、3 道新题、答案、rubric、独立校验和保存；题库兼容记录为 `#29`—`#31`。
+- 断点恢复实测：任务 `#3` 首次在考点阶段按证据规则返回 `uncertain` 并失败；增加局部题集 taxonomy 模式后调用 retry，复用已成功切题结果，从 taxonomy attempt 2 继续并最终 `succeeded`。
+
+### 本轮发现并修复的真实根因
+
+DeepSeek V4-Pro 默认启用 thinking。旧适配器给结构化调用设置较小 `max_tokens`，模型可能把全部额度用于 `reasoning_content`，最终 `content` 为空；适配器又只读取 `content`，导致前端长期停留在解析阶段并进入无效 JSON 修复重试。真实 Q2 第一次 AI run 等待 137228 ms 后 `output_raw=null`，复现了该故障。
+
+修复后，DeepSeek 结构化调用显式传递 `thinking: {type: "disabled"}` 和 `response_format: {type: "json_object"}`；空 final content 会携带 `finish_reason`/`reasoning_only` 明确失败。服务重启时，旧 `running` stage 会标记为可重试失败并创建下一 attempt，不再永久悬挂。
+
+### 手动验证方法
+
+1. 使用教师账号登录，打开左侧“快速仿题”。
+2. 输入课程名，拖入 `.md`、`.txt` 或 `.tex`，或直接粘贴已有题目。
+3. 点击“开始生成类似题目”，观察六个阶段；失败时点击“从断点重试”。
+4. 检查新题、考点、答案、rubric、相似度和质量状态。
+5. 保存后打开“AI 题目审核”，来源应显示“快速仿题 #任务号”，教师审核通过后才能用于组卷。
+
+### 当前仍未解决
+
+- 快速仿题输入目前支持文本、Markdown、TeX；PDF/DOCX/OCR 仍走完整出卷导入链路，尚未接入此快捷页面。
+- 快速仿题已做原题与新题的规范化 trigram 防复制和 Prompt 批内约束，但 embedding 级语义近似检测仍未实现。
+- 原题答案在快捷任务中只保存为来源记录，尚未单独执行 `answer_alignment_prompt`；该字段不会作为新题答案来源。
+- 完整出卷的模板、三类细目表、N 套等价性和统一三格式导出仍按上表标为部分或未完成，不能由本轮快速仿题成功外推为全部完成。
+- `npm install` 报告依赖树中 3 个 moderate、3 个 high 漏洞；本轮未运行可能产生破坏性升级的 `npm audit fix --force`，需要独立安全评估。

@@ -2,7 +2,7 @@ import dotenv from 'dotenv';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
-dotenv.config({ path: join(__dirname, '..', '..', '.env') });
+dotenv.config({ path: join(__dirname, '..', '..', '.env'), override: true });
 import express from 'express';
 import cors from 'cors';
 import morgan from 'morgan';
@@ -17,6 +17,8 @@ import examRoutes from './routes/exam.js';
 import paperRoutes from './routes/paper.js';
 import attemptRoutes from './routes/attempt.js';
 import exportArtifactRoutes from './routes/exportArtifact.js';
+import similarQuestionRoutes from './routes/similarQuestion.js';
+import { resumeSimilarQuestionJobs } from './services/similarQuestionPipeline.js';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -40,6 +42,7 @@ app.use('/api/papers', paperRoutes);
 app.use('/api/exams', examRoutes);
 app.use('/api/attempts', attemptRoutes);
 app.use('/api/export-artifacts', exportArtifactRoutes);
+app.use('/api/similar-question-jobs', similarQuestionRoutes);
 
 // Error handler (must be last)
 app.use(errorHandler);
@@ -47,6 +50,7 @@ app.use(errorHandler);
 async function start() {
   await initDb();
   runMigrations();
+  resumeSimilarQuestionJobs();
 
   app.listen(PORT, () => {
     console.log(`🚀 Server running at http://localhost:${PORT}`);

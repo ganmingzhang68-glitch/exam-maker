@@ -17,12 +17,14 @@
     "db:generate": "npm run db:generate -w server",
     "db:migrate": "npm run db:migrate -w server",
     "db:seed": "npm run db:seed -w server",
-    "questions:import-generated": "npm run questions:import-generated -w server"
+    "questions:import-generated": "npm run questions:import-generated -w server",
+    "e2e:similar-question": "node scripts/e2e-similar-question.mjs"
   },
   "devDependencies": {
     "@types/sql.js": "^1.4.11",
     "concurrently": "^8.2.2",
     "eslint": "^9.39.5",
+    "playwright-core": "^1.62.1",
     "typescript-eslint": "^8.65.0"
   }
 }

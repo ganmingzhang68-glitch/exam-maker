@@ -49,6 +49,9 @@ export type FileType =
   | 'blueprint'
   | 'template'
   | 'generated_paper'
+  | 'student_paper'
+  | 'answer_key'
+  | 'rubric'
   | 'final_output'
   | 'env_report';
 
@@ -176,6 +179,59 @@ export interface QuestionSource {
   filename: string;
   projectTitle: string;
   questionCount: number;
+}
+
+// ============ Similar question generation ============
+export type SimilarQuestionJobStatus = 'pending' | 'running' | 'succeeded' | 'failed' | 'saved';
+export type SimilarQuestionDifficultyMode = 'same' | 'lower' | 'higher';
+
+export interface SimilarQuestionStage {
+  id: number;
+  stage: string;
+  attemptNo: number;
+  status: 'running' | 'succeeded' | 'failed';
+  errorMessage: string | null;
+  retryable: boolean;
+  startedAt: string | null;
+  finishedAt: string | null;
+}
+
+export interface SimilarQuestionResultItem {
+  generatedQuestionId: number;
+  sourceQuestionNo: string;
+  questionType: QuestionType;
+  stem: Array<{ type: string; content: string; assetId?: number | null }>;
+  options: Array<{ id: string; content: Array<{ type: string; content: string; assetId?: number | null }> }>;
+  subquestions: Array<{ id: string; label: string | null; stem: Array<{ type: string; content: string }>; score: number }>;
+  score: number;
+  knowledgePoints: string[];
+  cognitiveLevel: string;
+  difficulty: Record<string, unknown>;
+  answer: Record<string, unknown>;
+  explanation: string[];
+  rubric: { totalScore: number; items: Array<Record<string, unknown>>; generalRule: string | null };
+  originality: { similarity: number; notes: string; variationAxis: string };
+  validation: { passed: boolean; findings: Array<Record<string, unknown>> };
+  savedQuestionId: number | null;
+}
+
+export interface SimilarQuestionJob {
+  id: number;
+  course: string;
+  scope: string | null;
+  sourceText: string;
+  sourceAnswer: string | null;
+  variantsPerQuestion: number;
+  defaultScore: number;
+  difficultyMode: SimilarQuestionDifficultyMode;
+  status: SimilarQuestionJobStatus;
+  currentStage: string | null;
+  lastSuccessfulStage: string | null;
+  errorSummary: string | null;
+  result: { sourceQuestions: Array<Record<string, unknown>>; items: SimilarQuestionResultItem[] } | null;
+  stages: SimilarQuestionStage[];
+  createdAt: string;
+  updatedAt: string;
 }
 
 export type PaperStatus = 'draft' | 'ready' | 'archived';

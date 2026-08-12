@@ -24,8 +24,8 @@ export const answerGenerationOutputSchema = z.object({
 }).strict();
 
 export const answerGenerationPrompt: PromptDefinition<typeof answerGenerationInputSchema, typeof answerGenerationOutputSchema> = {
-  id: 'answer_generation_prompt', version: '1.0.0', stage: 'answer_and_rubric_generation',
-  task: '只针对冻结题面生成参考答案、解释、关键步骤、等价答案和客观题干扰项分析。不得修改题面，不得分配评分分值或输出 rubric。',
+  id: 'answer_generation_prompt', version: '1.0.2', stage: 'answer_and_rubric_generation',
+  task: '只针对冻结题面生成参考答案、解释、关键步骤、等价答案和客观题干扰项分析。题面自洽且可由通用学科知识推导时必须独立求解，参考材料不需要包含同题答案，evidence 可以为空；只有题面矛盾、信息不足或无法可靠求解时才返回 uncertain。不得修改题面，不得分配评分分值或输出 rubric。Evidence 必须使用 sourceDocumentId、pageNumber、blockId、quote；未知页码或块编号写 null，不得改用 documentId、source 或 excerpt。subjective 答案必须使用 {kind:"subjective",keyPoints:string[]}。',
   inputSchema: answerGenerationInputSchema, outputSchema: answerGenerationOutputSchema,
   outputContract: { status: 'ok|uncertain', questionId: 'string', answer: 'AnswerSpec|null', explanation: 'string[]', keySteps: 'string[]', acceptableAlternatives: 'string[]', distractorAnalysis: 'DistractorAnalysis[]', confidence: '0..1', evidence: 'Evidence[]', issues: 'Issue[]', additionalProperties: false, forbiddenFields: ['rubric', 'scoreChanges'] },
   splitInput: input => ({ trustedContext: { questionId: input.question.id, expectedAnswerKind: input.expectedAnswerKind, frozenScore: input.question.score }, untrustedData: { question: input.question, referenceMaterials: input.referenceMaterials } }),

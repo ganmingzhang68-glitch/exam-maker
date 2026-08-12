@@ -2,7 +2,11 @@ import { z } from 'zod';
 import { promptIssueSchema, promptStatusSchema, type PromptDefinition } from './core.js';
 
 export const rubricGenerationInputSchema = z.object({
-  question: z.object({ id: z.string().min(1), questionType: z.string().min(1), stem: z.array(z.record(z.unknown())).min(1), score: z.number().positive() }).strict(),
+  question: z.object({
+    id: z.string().min(1), questionType: z.string().min(1), stem: z.array(z.record(z.unknown())).min(1),
+    subquestions: z.array(z.object({ id: z.string().min(1), label: z.string().nullable(), stem: z.array(z.record(z.unknown())).min(1), score: z.number().nonnegative() }).strict()),
+    score: z.number().positive(),
+  }).strict(),
   answer: z.object({ answer: z.record(z.unknown()), explanation: z.array(z.string()), keySteps: z.array(z.string()), acceptableAlternatives: z.array(z.string()) }).strict(),
 }).strict();
 
@@ -18,8 +22,8 @@ export const rubricGenerationOutputSchema = z.object({
 });
 
 export const rubricGenerationPrompt: PromptDefinition<typeof rubricGenerationInputSchema, typeof rubricGenerationOutputSchema> = {
-  id: 'rubric_generation_prompt', version: '1.0.0', stage: 'answer_and_rubric_generation',
-  task: '只依据冻结题面、已生成答案和题目总分生成逐项评分标准。不得修改题面或答案；status=ok 时评分项分值之和必须等于 totalScore。',
+  id: 'rubric_generation_prompt', version: '1.0.1', stage: 'answer_and_rubric_generation',
+  task: '只依据冻结题面（包括全部小问）、已生成答案和题目总分生成逐项评分标准。不得修改题面或答案；每个小问必须有对应评分项；status=ok 时评分项分值之和必须等于 totalScore。',
   inputSchema: rubricGenerationInputSchema, outputSchema: rubricGenerationOutputSchema,
   outputContract: { status: 'ok|uncertain', questionId: 'string', totalScore: 'number', items: 'RubricItem[]', generalRule: 'string|null', issues: 'Issue[]', additionalProperties: false },
   splitInput: input => ({ trustedContext: { questionId: input.question.id, questionType: input.question.questionType, totalScore: input.question.score }, untrustedData: { frozenQuestion: input.question, generatedAnswer: input.answer } }),

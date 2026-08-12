@@ -62,11 +62,12 @@ async function aiExtractTemplate(
 ): Promise<TemplateResult> {
   addEvent(projectId, 'step-3', 'log', '🤖 使用 AI 提取试卷结构...');
 
+  const parsedQuestions: Array<{
+    sourceExamId: number; questionNo: string; questionType: string; score: number | null;
+    sectionTitle: string | null; evidence: Array<{ sourceDocumentId: number; pageNumber: number | null; blockId: string | null; quote: string }>;
+  }> = [];
+
   try {
-    const parsedQuestions: Array<{
-      sourceExamId: number; questionNo: string; questionType: string; score: number | null;
-      sectionTitle: string | null; evidence: Array<{ sourceDocumentId: number; pageNumber: number | null; blockId: string | null; quote: string }>;
-    }> = [];
     const renderingEvidence: Array<{ sourceExamId: number; text: string; evidence: never[] }> = [];
     for (const file of texFiles) {
       const text = readFileSync(file.filepath, 'utf-8');
@@ -126,8 +127,61 @@ async function aiExtractTemplate(
   } catch (err) {
     addEvent(projectId, 'step-3', 'error',
       `AI 模板提取失败: ${err instanceof Error ? err.message : 'Unknown'}`);
+    if (parsedQuestions.length > 0) {
+      const fallback = buildTargetTemplateFromQuestions(course, parsedQuestions, texFiles.map(f => f.filename));
+      addEvent(projectId, 'step-3', 'log',
+        `🔧 原卷分值证据不足，已按 ${fallback.sections.reduce((sum, section) => sum + section.count, 0)} 道已解析题目建立可编辑目标模板`);
+      return fallback;
+    }
     return heuristicExtractTemplate(projectId, course, texFiles);
   }
+}
+
+export function buildTargetTemplateFromQuestions(
+  course: string,
+  questions: Array<{ questionType: string; score: number | null }>,
+  sourceFiles: string[],
+): TemplateResult {
+  if (questions.length === 0) return buildFallbackTemplate(course);
+
+  const hasCompleteScores = questions.every(question =>
+    typeof question.score === 'number' && Number.isFinite(question.score) && question.score > 0);
+  const targetTotal = hasCompleteScores
+    ? questions.reduce((sum, question) => sum + (question.score ?? 0), 0)
+    : 100;
+
+  const allocatedScores = hasCompleteScores
+    ? questions.map(question => question.score as number)
+    : questions.map((_, index) => {
+        const base = Math.floor(targetTotal / questions.length);
+        return base + (index < targetTotal % questions.length ? 1 : 0);
+      });
+
+  const sections: TemplateSection[] = [];
+  for (let index = 0; index < questions.length; index++) {
+    const type = questions[index].questionType || 'subjective';
+    const score = allocatedScores[index];
+    const previous = sections.at(-1);
+    if (previous && previous.type === type && previous.pointsPerQuestion === score) {
+      previous.count += 1;
+      previous.subtotal += score;
+      continue;
+    }
+    sections.push({ index: sections.length + 1, type, count: 1, pointsPerQuestion: score, subtotal: score });
+  }
+
+  return {
+    course,
+    totalScore: targetTotal,
+    duration: 120,
+    sections,
+    headerStyle: '',
+    verified: hasCompleteScores,
+    verifyNotes: hasCompleteScores
+      ? []
+      : ['历史材料未提供可靠分值；当前 100 分结构是可编辑的目标模板，不代表原卷分值。'],
+    sourceFiles,
+  };
 }
 
 function heuristicExtractTemplate(
@@ -218,7 +272,24 @@ function heuristicExtractTemplate(
   }
 
   // Ensure totalScore is 100 if no scores found
-  if (result.totalScore === 0) result.totalScore = 100;
+  if (result.totalScore === 0) {
+    const questionMatches = texFiles.flatMap(file => {
+      try {
+        const text = readFileSync(file.filepath, 'utf-8');
+        return [...text.matchAll(/(?:^|\n)\s*(?:题目\s*)?(\d{1,3})[.、．)）\s]/gm)].map(match => ({
+          questionType: /证明/.test(match[0] + text.slice(match.index ?? 0, (match.index ?? 0) + 120)) ? 'proof' : 'subjective',
+          score: null,
+        }));
+      } catch {
+        return [];
+      }
+    });
+    if (questionMatches.length > 0) {
+      return buildTargetTemplateFromQuestions(course, questionMatches, texFiles.map(file => file.filename));
+    }
+    result.totalScore = 100;
+    result.verifyNotes.push('未识别到题型或题量，不能直接用于生成；需要教师补充模板。');
+  }
 
   return result;
 }

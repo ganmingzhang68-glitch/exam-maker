@@ -89,7 +89,8 @@ export function parsePromptOutput<I extends z.ZodTypeAny, O extends z.ZodTypeAny
   try {
     value = JSON.parse(trimmed);
   } catch (error) {
-    throw new Error(`${definition.id}@${definition.version} 返回无效 JSON`, { cause: error });
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new Error(`${definition.id}@${definition.version} 返回无效 JSON: ${detail}`, { cause: error });
   }
   return definition.outputSchema.parse(value);
 }
@@ -102,7 +103,15 @@ export const promptIssueSchema = z.object({
 
 export const promptStatusSchema = z.enum(['ok', 'uncertain']);
 
-export const difficultyPromptSchema = z.object({
+export const difficultyPromptSchema = z.preprocess((value) => {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    const difficulty = value as Record<string, unknown>;
+    if (difficulty.difficultyLevel === 'intermediate') {
+      return { ...difficulty, difficultyLevel: 'medium' };
+    }
+  }
+  return value;
+}, z.object({
   difficultyLevel: z.enum(['basic', 'medium', 'hard']),
   difficultyScore: z.number().min(0).max(1),
   difficultySource: z.enum(['predicted', 'teacher_adjusted', 'empirical']),
@@ -113,11 +122,21 @@ export const difficultyPromptSchema = z.object({
   if (value.difficultySource === 'empirical' && value.empiricalSampleSize === null) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['empiricalSampleSize'], message: 'empirical 必须包含样本量' });
   }
-});
+}));
 
-export const evidenceSchema = z.object({
+export const evidenceSchema = z.preprocess((value) => {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    const evidence = value as Record<string, unknown>;
+    return {
+      ...evidence,
+      pageNumber: evidence.pageNumber ?? null,
+      blockId: evidence.blockId === '' || evidence.blockId === undefined ? null : evidence.blockId,
+    };
+  }
+  return value;
+}, z.object({
   sourceDocumentId: z.number().int().positive(),
   pageNumber: z.number().int().positive().nullable(),
   blockId: z.string().min(1).nullable(),
   quote: z.string(),
-}).strict();
+}).strict());

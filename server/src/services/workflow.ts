@@ -14,14 +14,43 @@ import { generatePapers } from './paperGenerator.js';
 import { compilePapers } from './compiler.js';
 
 type ProjectRow = typeof schema.projects.$inferSelect;
+const activeWorkflows = new Set<number>();
 
 // ====== Main workflow entry ======
 export async function startWorkflow(projectId: number): Promise<void> {
-  const project = db.select().from(schema.projects)
+  if (activeWorkflows.has(projectId)) {
+    addEvent(projectId, 'workflow', 'log', 'ℹ 工作流正在运行，本次重复启动已忽略');
+    return;
+  }
+  let project = db.select().from(schema.projects)
     .where(eq(schema.projects.id, projectId)).get();
 
   if (!project) throw new Error('Project not found');
 
+  if (project.status === 'error') {
+    const resumeStatus = inferResumeStatus(project);
+    db.update(schema.projects)
+      .set({ status: resumeStatus, updatedAt: new Date().toISOString() })
+      .where(eq(schema.projects.id, projectId)).run();
+    project = { ...project, status: resumeStatus };
+    addEvent(projectId, 'workflow', 'log', `↩ 从最近成功阶段继续：${resumeStatus}`);
+  } else if (project.status === 'generating' && inferResumeStatus(project) === 'assigning') {
+    // A development restart or process crash can leave a project marked as
+    // generating with a stale/incompatible difficulty plan on disk.
+    db.update(schema.projects)
+      .set({ status: 'assigning', updatedAt: new Date().toISOString() })
+      .where(eq(schema.projects.id, projectId)).run();
+    project = { ...project, status: 'assigning' };
+    addEvent(projectId, 'workflow', 'log', '↩ 检测到题位计划与模板不一致，从难度分配阶段恢复');
+  } else if (project.status === 'done' && generatedSourcesNeedRerender(projectId)) {
+    db.update(schema.projects)
+      .set({ status: 'generating', updatedAt: new Date().toISOString() })
+      .where(eq(schema.projects.id, projectId)).run();
+    project = { ...project, status: 'generating' };
+    addEvent(projectId, 'workflow', 'log', '↩ 检测到旧版导出中的公式或表格损坏，使用已保存题位重新渲染');
+  }
+
+  activeWorkflows.add(projectId);
   try {
     await runWorkflow(project);
   } catch (err: unknown) {
@@ -31,7 +60,67 @@ export async function startWorkflow(projectId: number): Promise<void> {
       .where(eq(schema.projects.id, projectId)).run();
     addEvent(projectId, 'error', 'error', `❌ 流程出错: ${msg}`);
     saveToDisk();
+  } finally {
+    activeWorkflows.delete(projectId);
   }
+}
+
+function inferResumeStatus(project: ProjectRow): string {
+  const files = db.select().from(schema.projectFiles)
+    .where(eq(schema.projectFiles.projectId, project.id)).all();
+  const generatedCount = files.filter(file => file.type === 'generated_paper').length;
+  if (generatedSourcesNeedRerender(project.id)) return 'generating';
+  if (generatedCount >= project.nSets) return 'compiling';
+
+  const dir = getProjectDir(project.id);
+  if (existsSync(join(dir, 'difficulty.json'))) {
+    try {
+      const template = JSON.parse(readFileSync(join(dir, 'template.json'), 'utf-8')) as {
+        totalScore: number; sections: Array<{ count: number }>;
+      };
+      const difficultyPlan = JSON.parse(readFileSync(join(dir, 'difficulty.json'), 'utf-8')) as {
+        slots: Array<{ score: number }>;
+        summary?: { passed?: boolean };
+      };
+      if (isDifficultyPlanCompatible(template, difficultyPlan)) return 'generating';
+      return 'assigning';
+    } catch {
+      return 'assigning';
+    }
+  }
+
+  const checkpoints = db.select().from(schema.checkpoints)
+    .where(eq(schema.checkpoints.projectId, project.id)).all();
+  const checkpointStatus = new Map(checkpoints.map(checkpoint => [checkpoint.step, checkpoint.status]));
+  if (checkpointStatus.get('template') === 'approved' && existsSync(join(dir, 'template.json'))) return 'assigning';
+  if (checkpointStatus.get('blueprint') === 'approved' && existsSync(join(dir, 'blueprint.jsonl'))) return 'templating';
+  if (files.some(file => file.type === 'source_tex')) return 'blueprinting';
+  if (files.some(file => file.type === 'past_paper')) return 'parsing';
+  return 'drafting';
+}
+
+export function isDifficultyPlanCompatible(
+  template: { totalScore: number; sections: Array<{ count: number }> },
+  difficultyPlan: { slots?: Array<{ score: number }>; summary?: { passed?: boolean } },
+): boolean {
+  const slots = difficultyPlan.slots ?? [];
+  const expectedCount = template.sections.reduce((sum, section) => sum + section.count, 0);
+  const plannedTotal = slots.reduce((sum, slot) => sum + slot.score, 0);
+  return difficultyPlan.summary?.passed !== false &&
+    slots.length === expectedCount && Math.abs(plannedTotal - template.totalScore) < 0.01;
+}
+
+export function latexSourceNeedsRerender(source: string): boolean {
+  return /\\textbackslash/.test(source) || /^\s*\|.+\|\s*$/m.test(source);
+}
+
+function generatedSourcesNeedRerender(projectId: number): boolean {
+  const generatedSources = db.select().from(schema.projectFiles)
+    .where(eq(schema.projectFiles.projectId, projectId)).all()
+    .filter(file => ['generated_paper', 'student_paper'].includes(file.type));
+  return generatedSources.some(file => {
+    try { return latexSourceNeedsRerender(readFileSync(file.filepath, 'utf-8')); } catch { return false; }
+  });
 }
 
 async function runWorkflow(project: ProjectRow): Promise<void> {
@@ -55,7 +144,17 @@ async function runWorkflow(project: ProjectRow): Promise<void> {
   // Step 1: Parse past papers → LaTeX
   if (current.status === 'parsing') {
     addEvent(id, 'step-1', 'progress', '📄 开始解析真题文件...');
-    await step1ParsePapers(id);
+    const hasPapers = await step1ParsePapers(id);
+
+    if (!hasPapers) {
+      // No past papers uploaded — cannot proceed
+      addEvent(id, 'step-1', 'error', '❌ 未找到真题文件，流程无法继续');
+      addEvent(id, 'step-1', 'log', '💡 请先上传往年真题文件（pdf/docx/doc/tex/md），再点击重试');
+      await updateStatus(id, 'error');
+      saveToDisk();
+      return;
+    }
+
     addEvent(id, 'step-1', 'done', '✅ 真题解析完成（详见上方日志）');
     await updateStatus(id, 'blueprinting');
     current = db.select().from(schema.projects).where(eq(schema.projects.id, id)).get()!;
@@ -65,6 +164,7 @@ async function runWorkflow(project: ProjectRow): Promise<void> {
   if (current.status === 'blueprinting') {
     addEvent(id, 'step-2', 'progress', '🔍 正在分析考点，构建双向细目表...');
     const blueprintPath = await step2BuildBlueprint(id, project, difficulty);
+    await resetCheckpointForReview(id, 'blueprint');
     addEvent(id, 'step-2', 'done', '✅ 双向细目表已生成', { file: blueprintPath });
     addEvent(id, 'step-2', 'log', '⏸ 请审核双向细目表，确认后流程继续');
     saveToDisk();
@@ -75,6 +175,7 @@ async function runWorkflow(project: ProjectRow): Promise<void> {
   if (current.status === 'templating') {
     addEvent(id, 'step-3', 'progress', '📐 正在提取试卷模板...');
     const templatePath = await step3ExtractTemplate(id, project);
+    await resetCheckpointForReview(id, 'template');
     addEvent(id, 'step-3', 'done', '✅ 试卷模板已提取', { file: templatePath });
     addEvent(id, 'step-3', 'log', '⏸ 请审核试卷模板（题型/分值/时长），确认后流程继续');
     saveToDisk();
@@ -88,7 +189,7 @@ async function runWorkflow(project: ProjectRow): Promise<void> {
     if (result.passed) {
       addEvent(id, 'step-4', 'done', `✅ 难度核算达标: 基础${result.basicPct}% / 中等${result.mediumPct}% / 难${result.hardPct}%`);
     } else {
-      addEvent(id, 'step-4', 'done', `⚠ 难度配比已分配 (${result.basicPct}/${result.mediumPct}/${result.hardPct})，偏差在可接受范围内`);
+      addEvent(id, 'step-4', 'done', `⚠ 难度配比已分配 (${result.basicPct}/${result.mediumPct}/${result.hardPct})，未达到目标；将作为质量警告交由教师审核`);
     }
     addEvent(id, 'step-4', 'log', '📋 逐题难度指派表已并入 template.md');
     await updateStatus(id, 'generating');
@@ -103,6 +204,9 @@ async function runWorkflow(project: ProjectRow): Promise<void> {
       project.scope, project.verifyMode
     );
     const successCount = results.filter(r => r.texSize > 0).length;
+    if (successCount === 0) {
+      throw new Error('试卷生成失败：没有产生可交付试卷，已保留前序解析、细目表和模板结果');
+    }
     if (successCount === project.nSets) {
       addEvent(id, 'step-5', 'done', `✅ ${project.nSets} 套试卷全部生成！`);
     } else {
@@ -117,7 +221,10 @@ async function runWorkflow(project: ProjectRow): Promise<void> {
     addEvent(id, 'step-6', 'progress', '🔧 正在编译/转换产出文件...');
     const results = await compilePapers(id, project.outputType);
     const successCount = results.filter(r => r.success).length;
-    addEvent(id, 'step-6', 'done', `✅ ${successCount}/${results.length} 套编译/转换完成`);
+    if (results.length === 0 || successCount !== results.length) {
+      throw new Error(`制品导出不完整：${successCount}/${results.length} 个制品通过 PDF、DOCX、Markdown 生成检查`);
+    }
+    addEvent(id, 'step-6', 'done', `✅ ${successCount}/${results.length} 个制品编译/转换完成`);
     addEvent(id, 'step-6', 'log', '⏸ 请从生成的试卷中选择要采用的套数并下载');
     await updateStatus(id, 'done');
   }
@@ -155,7 +262,7 @@ async function step0DetectEnv(projectId: number): Promise<void> {
 
   db.insert(schema.projectFiles).values({
     projectId,
-    type: 'source_tex', // reuse type for env report
+    type: 'env_report', // distinct type, NOT source_tex (won't be analyzed as a paper)
     filename: 'environment.md',
     filepath: reportPath,
     metadata: JSON.stringify({ type: 'env_report', env }),
@@ -198,7 +305,7 @@ async function step0DetectEnv(projectId: number): Promise<void> {
 }
 
 // ====== Step 1: Parse Past Papers → LaTeX ======
-async function step1ParsePapers(projectId: number): Promise<void> {
+async function step1ParsePapers(projectId: number): Promise<boolean> {
   const pastPapers = db.select().from(schema.projectFiles)
     .where(and(
       eq(schema.projectFiles.projectId, projectId),
@@ -207,9 +314,7 @@ async function step1ParsePapers(projectId: number): Promise<void> {
     .all();
 
   if (pastPapers.length === 0) {
-    addEvent(projectId, 'step-1', 'log', '⚠ 未找到真题文件，跳过解析步骤');
-    addEvent(projectId, 'step-1', 'log', '💡 请先上传往年真题文件（pdf/docx/doc/tex/md）');
-    return;
+    return false;
   }
 
   addEvent(projectId, 'step-1', 'log', `📋 共 ${pastPapers.length} 份真题待解析`);
@@ -309,6 +414,8 @@ async function step1ParsePapers(projectId: number): Promise<void> {
 
   addEvent(projectId, 'step-1', 'log',
     `📊 解析完成: ${successCount} 成功, ${failCount} 失败, 共 ${pastPapers.length} 份`);
+
+  return successCount > 0;
 }
 
 // ====== Step 2: Build Blueprint (Bidirectional Spec Table) ======
@@ -323,6 +430,10 @@ async function step2BuildBlueprint(
     project.scope,
     difficulty
   );
+
+  if (result.entries.length === 0) {
+    throw new Error('细目表生成失败：没有识别到任何题目，不能进入教师确认阶段');
+  }
 
   const blueprintPath = join(getProjectDir(projectId), 'blueprint.md');
 
@@ -348,6 +459,10 @@ async function step3ExtractTemplate(projectId: number, project: ProjectRow): Pro
   addEvent(projectId, 'step-3', 'log', '📐 启动模板提取子代理 + 核对子代理...');
 
   const result = await analyzeTemplate(projectId, project.course);
+  const computedTotal = result.sections.reduce((sum, section) => sum + section.subtotal, 0);
+  if (result.sections.length === 0 || computedTotal <= 0 || Math.abs(computedTotal - result.totalScore) > 0.01) {
+    throw new Error('试卷模板不可执行：题型、题量或分值结构缺失，不能进入教师确认阶段');
+  }
   saveTemplateOutputs(projectId, result);
 
   const templatePath = join(getProjectDir(projectId), 'template.md');
@@ -372,6 +487,21 @@ async function updateStatus(projectId: number, status: string): Promise<void> {
   db.update(schema.projects)
     .set({ status, updatedAt: new Date().toISOString() })
     .where(eq(schema.projects.id, projectId)).run();
+  saveToDisk();
+}
+
+async function resetCheckpointForReview(projectId: number, step: 'blueprint' | 'template'): Promise<void> {
+  db.update(schema.checkpoints)
+    .set({
+      status: 'pending',
+      teacherNotes: null,
+      updatedAt: new Date().toISOString(),
+    })
+    .where(and(
+      eq(schema.checkpoints.projectId, projectId),
+      eq(schema.checkpoints.step, step),
+    ))
+    .run();
   saveToDisk();
 }
 
