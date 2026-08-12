@@ -12,8 +12,8 @@ import {
   buildPaperSnapshot,
   ensurePaperQuestionSnapshots,
   getAttemptDetail,
-  serializeAttempt,
 } from '../services/attemptSnapshot.js';
+import { getStudentExamSummaries, settleExpiredAttempts } from '../services/examStatus.js';
 
 type ExamRow = typeof schema.exams.$inferSelect;
 
@@ -183,47 +183,9 @@ export function closeExam(req: AuthRequest, res: Response, next: NextFunction) {
 
 export function listStudentExams(req: AuthRequest, res: Response, next: NextFunction) {
   try {
-    const assignments = db.select({
-      assignment: schema.examAssignments,
-      exam: schema.exams,
-      paper: schema.papers,
-    }).from(schema.examAssignments)
-      .innerJoin(schema.exams, eq(schema.examAssignments.examId, schema.exams.id))
-      .innerJoin(schema.papers, eq(schema.exams.paperId, schema.papers.id))
-      .where(eq(schema.examAssignments.studentId, req.userId!))
-      .orderBy(desc(schema.exams.startAt))
-      .all();
-    const now = Date.now();
-    const data = assignments.map(({ exam, paper }) => {
-      const attempts = db.select().from(schema.attempts).where(and(
-        eq(schema.attempts.examId, exam.id),
-        eq(schema.attempts.studentId, req.userId!),
-      )).orderBy(desc(schema.attempts.attemptNo)).all();
-      const latest = attempts[0] ?? null;
-      const terminal = latest && ['submitted', 'grading', 'graded'].includes(latest.status);
-      const availability = terminal
-        ? 'completed'
-        : exam.status === 'closed' || (exam.endAt && new Date(exam.endAt).getTime() <= now)
-          ? 'ended'
-          : exam.startAt && new Date(exam.startAt).getTime() > now
-            ? 'upcoming'
-            : 'available';
-      return {
-        id: exam.id,
-        title: exam.title,
-        status: exam.status,
-        startAt: exam.startAt,
-        endAt: exam.endAt,
-        durationMinutes: exam.durationMinutes,
-        allowedAttempts: exam.allowedAttempts,
-        paperTitle: paper.title,
-        totalScore: paper.totalScore,
-        attemptCount: attempts.length,
-        availability,
-        latestAttempt: latest ? serializeAttempt(latest) : null,
-      };
-    });
-    res.json({ success: true, data });
+    const result = getStudentExamSummaries(req.userId!);
+    if (result.changed) saveToDisk();
+    res.json({ success: true, data: result.data });
   } catch (error) { next(error); }
 }
 
@@ -244,10 +206,17 @@ export function startExam(req: AuthRequest, res: Response, next: NextFunction) {
     if (exam.endAt && now.getTime() >= new Date(exam.endAt).getTime()) {
       throw new AppError(403, '考试已经结束');
     }
-    const attempts = db.select().from(schema.attempts).where(and(
+    let attempts = db.select().from(schema.attempts).where(and(
       eq(schema.attempts.examId, examId),
       eq(schema.attempts.studentId, req.userId!),
     )).orderBy(desc(schema.attempts.attemptNo)).all();
+    if (settleExpiredAttempts(exam, attempts, now.getTime())) {
+      saveToDisk();
+      attempts = db.select().from(schema.attempts).where(and(
+        eq(schema.attempts.examId, examId),
+        eq(schema.attempts.studentId, req.userId!),
+      )).orderBy(desc(schema.attempts.attemptNo)).all();
+    }
     const active = attempts.find((attempt) => attempt.status === 'in_progress');
     if (active) {
       res.json({ success: true, data: getAttemptDetail(active.id) });
@@ -278,12 +247,19 @@ export function startExam(req: AuthRequest, res: Response, next: NextFunction) {
 export function getStudentExamQuestions(req: AuthRequest, res: Response, next: NextFunction) {
   try {
     const examId = positiveIdSchema.parse(req.params.id);
-    const attempt = db.select().from(schema.attempts).where(and(
+    const exam = db.select().from(schema.exams).where(eq(schema.exams.id, examId)).get();
+    if (!exam) throw new AppError(404, '考试不存在');
+    let attempt = db.select().from(schema.attempts).where(and(
       eq(schema.attempts.examId, examId),
       eq(schema.attempts.studentId, req.userId!),
       eq(schema.attempts.status, 'in_progress'),
     )).orderBy(desc(schema.attempts.attemptNo)).get();
     if (!attempt) throw new AppError(409, '请先开始考试');
+    if (settleExpiredAttempts(exam, [attempt])) {
+      saveToDisk();
+      attempt = db.select().from(schema.attempts).where(eq(schema.attempts.id, attempt.id)).get();
+      if (!attempt || attempt.status !== 'in_progress') throw new AppError(409, '作答时间已结束，试卷已自动提交');
+    }
     const detail = getAttemptDetail(attempt.id);
     res.json({
       success: true,

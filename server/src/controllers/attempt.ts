@@ -6,6 +6,7 @@ import { AppError } from '../middleware/errorHandler.js';
 import type { AuthRequest } from '../middleware/auth.js';
 import { getAttemptDetail, parsePaperSnapshot } from '../services/attemptSnapshot.js';
 import { gradeAttempt } from '../services/grading.js';
+import { settleExpiredAttempts } from '../services/examStatus.js';
 
 function getStudentAttempt(req: AuthRequest, id: number) {
   const attempt = db.select().from(schema.attempts).where(eq(schema.attempts.id, id)).get();
@@ -23,7 +24,9 @@ function serializeAnswer(row: typeof schema.answers.$inferSelect) {
 export function getAttempt(req: AuthRequest, res: Response, next: NextFunction) {
   try {
     const id = positiveIdSchema.parse(req.params.id);
-    getStudentAttempt(req, id);
+    const attempt = getStudentAttempt(req, id);
+    const exam = db.select().from(schema.exams).where(eq(schema.exams.id, attempt.examId)).get();
+    if (exam && settleExpiredAttempts(exam, [attempt])) saveToDisk();
     res.json({ success: true, data: getAttemptDetail(id) });
   } catch (error) { next(error); }
 }

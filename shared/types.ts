@@ -432,6 +432,7 @@ export interface AttemptPaperSnapshot {
 }
 
 export type StudentExamAvailability = 'upcoming' | 'available' | 'ended' | 'completed';
+export type StudentExamDisplayStatus = 'upcoming' | 'available' | 'in_progress' | 'submitted' | 'grading' | 'graded' | 'ended';
 export interface StudentExamSummary {
   id: number;
   title: string;
@@ -444,7 +445,47 @@ export interface StudentExamSummary {
   totalScore: number;
   attemptCount: number;
   availability: StudentExamAvailability;
+  displayStatus: StudentExamDisplayStatus;
   latestAttempt: Attempt | null;
+}
+
+export interface TeacherDashboardExam {
+  id: number;
+  title: string;
+  course: string;
+  classNames: string[];
+  startAt: string | null;
+  endAt: string | null;
+  status: ExamStatus;
+  submittedCount: number;
+  assignmentCount: number;
+  pendingGradingCount: number;
+}
+
+export interface TeacherDashboardData {
+  metrics: {
+    activeCourseCount: number;
+    activeClassCount: number;
+    ongoingExamCount: number;
+    pendingGradingCount: number;
+    weeklySubmissionCount: number;
+  };
+  recentExams: TeacherDashboardExam[];
+  recentPapers: Array<Pick<Paper, 'id' | 'title' | 'course' | 'status' | 'updatedAt'>>;
+  issues: Array<{ type: string; title: string; description: string; resourceId: number }>;
+  activities: Array<{ type: string; title: string; occurredAt: string; resourceId: number }>;
+}
+
+export interface StudentDashboardData {
+  exams: StudentExamSummary[];
+  courses: Array<{ id: number; name: string; classId: number; className: string; semester: string | null }>;
+  metrics: {
+    pendingCount: number;
+    inProgressCount: number;
+    upcomingCount: number;
+    completedCount: number;
+  };
+  recentScores: Array<{ examId: number; examTitle: string; attemptId: number; score: number; totalScore: number; gradedAt: string | null }>;
 }
 
 export interface TeacherExamSummary extends Exam {

@@ -121,11 +121,17 @@ export function recalculateAttemptScores(attemptId: number): typeof schema.attem
     }
   }
   const status = hasSubjective && !allSubjectiveGraded ? 'grading' : 'graded';
+  const completedAt = status === 'graded' ? attempt.gradedAt ?? new Date().toISOString() : null;
+  const finalGrader = status === 'graded'
+    ? attempt.gradedBy ?? answers.find((answer) => answer.gradingStatus === 'manual_graded' && answer.gradedBy)?.gradedBy ?? null
+    : null;
   const row = db.update(schema.attempts).set({
     objectiveScore,
     subjectiveScore,
     totalScore: objectiveScore + subjectiveScore,
     status,
+    gradedBy: finalGrader,
+    gradedAt: completedAt,
     updatedAt: new Date().toISOString(),
   }).where(eq(schema.attempts.id, attemptId)).returning().get();
   return row;

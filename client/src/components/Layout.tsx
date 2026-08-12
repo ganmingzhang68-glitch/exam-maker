@@ -16,6 +16,7 @@ import {
   RobotOutlined,
   ReadOutlined,
   TeamOutlined,
+  DashboardOutlined,
 } from '@ant-design/icons';
 import { useAuthStore } from '../store/authStore';
 
@@ -29,11 +30,15 @@ const AppLayout: React.FC = () => {
   const { token: themeToken } = theme.useToken();
 
   const menuItems = user?.role === 'student'
-    ? [{ key: '/student/exams', icon: <SolutionOutlined />, label: '我的考试' }]
+    ? [
+      { key: '/student/dashboard', icon: <DashboardOutlined />, label: '学习首页' },
+      { key: '/student/exams', icon: <SolutionOutlined />, label: '我的考试' },
+    ]
     : [
+      { key: '/', icon: <DashboardOutlined />, label: '教师首页' },
       { key: '/courses', icon: <ReadOutlined />, label: '课程管理' },
       { key: '/classes', icon: <TeamOutlined />, label: '班级管理' },
-      { key: '/', icon: <ProjectOutlined />, label: '出卷项目' },
+      { key: '/projects', icon: <ProjectOutlined />, label: '出卷项目' },
       { key: '/projects/new', icon: <PlusOutlined />, label: '新建项目' },
       { key: '/questions/generate', icon: <RobotOutlined />, label: '快速仿题' },
       { key: '/questions/review', icon: <AuditOutlined />, label: 'AI 题目审核' },
@@ -42,7 +47,9 @@ const AppLayout: React.FC = () => {
       { key: '/exams', icon: <CalendarOutlined />, label: '考试管理' },
     ];
 
-  const selectedMenuKey = location.pathname.startsWith('/student/exams') || location.pathname.startsWith('/attempts/')
+  const selectedMenuKey = location.pathname.startsWith('/student/dashboard')
+    ? '/student/dashboard'
+    : location.pathname.startsWith('/student/exams') || location.pathname.startsWith('/attempts/')
     ? '/student/exams'
     : location.pathname.startsWith('/courses')
     ? '/courses'
@@ -60,7 +67,9 @@ const AppLayout: React.FC = () => {
           ? '/exams'
         : location.pathname.startsWith('/projects/new')
           ? '/projects/new'
-          : '/';
+          : location.pathname.startsWith('/projects/') || location.pathname === '/projects'
+            ? '/projects'
+            : '/';
 
   const userMenuItems = [
     { key: 'logout', icon: <LogoutOutlined />, label: '退出登录', danger: true },

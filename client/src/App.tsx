@@ -24,13 +24,15 @@ import CourseList from './pages/CourseList';
 import CourseDetail from './pages/CourseDetail';
 import TeachingClassList from './pages/TeachingClassList';
 import TeachingClassDetail from './pages/TeachingClassDetail';
+import TeacherDashboard from './pages/TeacherDashboard';
+import StudentDashboard from './pages/StudentDashboard';
 
 const teacherRoles = ['teacher', 'admin'] as const;
 
 const HomeRoute: React.FC = () => {
   const user = useAuthStore((state) => state.user);
-  if (user?.role === 'student') return <Navigate to="/student/exams" replace />;
-  return <ProjectList />;
+  if (user?.role === 'student') return <Navigate to="/student/dashboard" replace />;
+  return <TeacherDashboard />;
 };
 
 const TeacherRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => (
@@ -63,6 +65,7 @@ const App: React.FC = () => {
         }
       >
         <Route path="/" element={<HomeRoute />} />
+        <Route path="/projects" element={<TeacherRoute><ProjectList /></TeacherRoute>} />
         <Route path="/projects/new" element={<TeacherRoute><ProjectNew /></TeacherRoute>} />
         <Route path="/courses" element={<TeacherRoute><CourseList /></TeacherRoute>} />
         <Route path="/courses/:id" element={<TeacherRoute><CourseDetail /></TeacherRoute>} />
@@ -79,6 +82,7 @@ const App: React.FC = () => {
         <Route path="/exams/:id/results" element={<TeacherRoute><ExamResults /></TeacherRoute>} />
         <Route path="/exams/:id/attempts/:attemptId/grade" element={<TeacherRoute><AttemptGrading /></TeacherRoute>} />
         <Route path="/student/exams" element={<StudentRoute><StudentExamList /></StudentRoute>} />
+        <Route path="/student/dashboard" element={<StudentRoute><StudentDashboard /></StudentRoute>} />
         <Route path="/attempts/:id" element={<StudentRoute><ExamTaking /></StudentRoute>} />
         <Route path="/attempts/:id/result" element={<StudentRoute><StudentResult /></StudentRoute>} />
       </Route>

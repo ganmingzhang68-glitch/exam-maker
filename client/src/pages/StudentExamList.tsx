@@ -19,6 +19,16 @@ const availabilityMeta = {
   completed: { label: '已完成', color: 'success' },
 } as const;
 
+const displayStatusMeta = {
+  upcoming: { label: '未开始', color: 'default' },
+  available: { label: '可参加', color: 'processing' },
+  in_progress: { label: '进行中', color: 'warning' },
+  submitted: { label: '已提交', color: 'cyan' },
+  grading: { label: '待批改', color: 'orange' },
+  graded: { label: '已评分', color: 'success' },
+  ended: { label: '已结束', color: 'default' },
+} as const;
+
 const StudentExamList: React.FC = () => {
   const navigate = useNavigate();
   const [exams, setExams] = useState<StudentExamSummary[]>([]);
@@ -63,9 +73,9 @@ const StudentExamList: React.FC = () => {
     { title: '考试名称', dataIndex: 'title', ellipsis: true },
     { title: '试卷', dataIndex: 'paperTitle', width: 180, ellipsis: true },
     {
-      title: '状态', dataIndex: 'availability', width: 110,
-      render: (availability: StudentExamSummary['availability']) => {
-        const meta = availabilityMeta[availability];
+      title: '状态', dataIndex: 'displayStatus', width: 110,
+      render: (displayStatus: StudentExamSummary['displayStatus']) => {
+        const meta = displayStatusMeta[displayStatus] ?? availabilityMeta.available;
         return <Tag color={meta.color}>{meta.label}</Tag>;
       },
     },
@@ -82,7 +92,7 @@ const StudentExamList: React.FC = () => {
     {
       title: '操作', key: 'actions', width: 180,
       render: (_, exam) => {
-        if (exam.latestAttempt?.status === 'in_progress') {
+        if (exam.displayStatus === 'in_progress' && exam.latestAttempt) {
           return <Button type="primary" icon={<FormOutlined />} onClick={() => navigate(`/attempts/${exam.latestAttempt!.id}`)}>继续作答</Button>;
         }
         if (exam.latestAttempt && ['submitted', 'grading', 'graded'].includes(exam.latestAttempt.status)) {
@@ -103,8 +113,8 @@ const StudentExamList: React.FC = () => {
     },
   ];
 
-  const current = exams.filter((exam) => ['available', 'upcoming'].includes(exam.availability));
-  const history = exams.filter((exam) => ['ended', 'completed'].includes(exam.availability));
+  const current = exams.filter((exam) => ['available', 'upcoming', 'in_progress'].includes(exam.displayStatus));
+  const history = exams.filter((exam) => ['ended', 'submitted', 'grading', 'graded'].includes(exam.displayStatus));
   const table = (data: StudentExamSummary[]) => (
     <Table<StudentExamSummary>
       rowKey="id"

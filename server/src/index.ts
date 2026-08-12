@@ -20,6 +20,7 @@ import exportArtifactRoutes from './routes/exportArtifact.js';
 import similarQuestionRoutes from './routes/similarQuestion.js';
 import courseRoutes from './routes/course.js';
 import teachingClassRoutes from './routes/teachingClass.js';
+import dashboardRoutes from './routes/dashboard.js';
 import { resumeSimilarQuestionJobs } from './services/similarQuestionPipeline.js';
 
 const app = express();
@@ -47,6 +48,7 @@ app.use('/api/export-artifacts', exportArtifactRoutes);
 app.use('/api/similar-question-jobs', similarQuestionRoutes);
 app.use('/api/courses', courseRoutes);
 app.use('/api/classes', teachingClassRoutes);
+app.use('/api/dashboard', dashboardRoutes);
 
 // Error handler (must be last)
 app.use(errorHandler);
