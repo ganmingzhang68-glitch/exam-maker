@@ -42,6 +42,8 @@ export const questionTypeSchema = z.enum([
 ]);
 export const questionStatusSchema = z.enum(['generated', 'reviewed', 'rejected']);
 export const difficultyLevelSchema = z.enum(['basic', 'medium', 'hard']);
+export const questionOriginSchema = z.enum(['past_exam', 'ai_generated', 'teacher_created', 'imported']);
+export const questionLifecycleStatusSchema = z.enum(['draft', 'reviewed', 'approved', 'archived']);
 
 const questionFieldsSchema = z.object({
   type: questionTypeSchema,
@@ -58,6 +60,9 @@ const questionFieldsSchema = z.object({
   sourceProjectId: z.number().int().positive().nullable().optional(),
   sourceQuestionNo: z.string().trim().max(100).nullable().optional(),
   metadata: z.record(z.unknown()).nullable().optional(),
+  courseId: z.number().int().positive().nullable().optional(),
+  origin: questionOriginSchema.optional(),
+  lifecycleStatus: questionLifecycleStatusSchema.optional(),
 });
 
 export const createQuestionSchema = questionFieldsSchema.superRefine((value, ctx) => {
@@ -79,9 +84,21 @@ export const questionListQuerySchema = z.object({
   difficulty: difficultyLevelSchema.optional(),
   sourceFileId: z.coerce.number().int().positive().optional(),
   sourceProjectId: z.coerce.number().int().positive().optional(),
+  courseId: z.coerce.number().int().positive().optional(),
+  origin: questionOriginSchema.optional(),
+  lifecycleStatus: questionLifecycleStatusSchema.optional(),
+  search: z.string().trim().max(200).optional(),
+  knowledgePoint: z.string().trim().max(100).optional(),
+  usage: z.enum(['used', 'unused']).optional(),
+  sort: z.enum(['updated_desc', 'updated_asc', 'score_desc', 'score_asc']).default('updated_desc'),
   limit: z.coerce.number().int().min(1).max(100).default(20),
   offset: z.coerce.number().int().min(0).default(0),
 });
+
+export const bulkQuestionActionSchema = z.object({
+  questionIds: z.array(z.number().int().positive()).min(1).max(500),
+  action: z.enum(['archive', 'approve']),
+}).strict();
 
 export const positiveIdSchema = z.coerce.number().int().positive();
 

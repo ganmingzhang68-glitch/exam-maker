@@ -221,6 +221,7 @@ export type DifficultyLevel = 'basic' | 'medium' | 'hard';
 export interface Question {
   id: number;
   createdBy: number;
+  courseId: number | null;
   sourceFileId: number | null;
   sourceProjectId: number | null;
   sourceQuestionNo: string | null;
@@ -235,6 +236,8 @@ export interface Question {
   knowledgePoints: string[] | null;
   status: QuestionStatus;
   aiGenerated: boolean;
+  origin: 'past_exam' | 'ai_generated' | 'teacher_created' | 'imported';
+  lifecycleStatus: 'draft' | 'reviewed' | 'approved' | 'archived';
   metadata: Record<string, unknown> | null;
   createdAt: string;
   updatedAt: string;
@@ -243,6 +246,15 @@ export interface Question {
 export interface QuestionListItem extends Question {
   sourceFileName: string | null;
   sourceProjectTitle: string | null;
+  courseName: string | null;
+  usageCount: number;
+}
+
+export interface QuestionVersion { id: number; questionId: number; versionNo: number; snapshot: Question; changedBy: number; changeNote: string | null; createdAt: string }
+export interface QuestionDetail extends QuestionListItem {
+  versions: QuestionVersion[];
+  usedByPapers: Array<{ id: number; title: string; status: PaperStatus }>;
+  statistics: { responseCount: number; correctRate: number | null; averageScoreRate: number | null } | null;
 }
 
 export interface QuestionSource {

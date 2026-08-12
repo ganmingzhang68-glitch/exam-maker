@@ -629,6 +629,7 @@ export const exportArtifacts = sqliteTable('export_artifacts', {
 export const questions = sqliteTable('questions', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   createdBy: integer('created_by').notNull().references(() => users.id),
+  courseId: integer('course_id').references(() => courses.id, { onDelete: 'set null' }),
   sourceFileId: integer('source_file_id').references(() => projectFiles.id, { onDelete: 'set null' }),
   sourceProjectId: integer('source_project_id').references(() => projects.id, { onDelete: 'set null' }),
   sourceQuestionNo: text('source_question_no'),
@@ -645,6 +646,8 @@ export const questions = sqliteTable('questions', {
   knowledgePoints: text('knowledge_points'),
   status: text('status', { enum: ['generated', 'reviewed', 'rejected'] }).notNull().default('generated'),
   aiGenerated: integer('ai_generated', { mode: 'boolean' }).notNull().default(false),
+  origin: text('origin', { enum: ['past_exam', 'ai_generated', 'teacher_created', 'imported'] }).notNull().default('teacher_created'),
+  lifecycleStatus: text('lifecycle_status', { enum: ['draft', 'reviewed', 'approved', 'archived'] }).notNull().default('draft'),
   metadata: text('metadata'),
   createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
   updatedAt: text('updated_at').notNull().default(sql`(datetime('now'))`),
@@ -653,6 +656,19 @@ export const questions = sqliteTable('questions', {
   sourceIdx: index('questions_source_file_idx').on(table.sourceFileId),
   sourceQuestionUnique: uniqueIndex('questions_source_question_unique')
     .on(table.sourceFileId, table.sourceQuestionNo),
+}));
+
+export const questionVersions = sqliteTable('question_versions', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  questionId: integer('question_id').notNull().references(() => questions.id, { onDelete: 'cascade' }),
+  versionNo: integer('version_no').notNull(),
+  snapshotJson: text('snapshot_json').notNull(),
+  changedBy: integer('changed_by').notNull().references(() => users.id, { onDelete: 'restrict' }),
+  changeNote: text('change_note'),
+  createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
+}, (table) => ({
+  questionVersionUnique: uniqueIndex('question_versions_question_version_unique').on(table.questionId, table.versionNo),
+  questionIdx: index('question_versions_question_idx').on(table.questionId, table.versionNo),
 }));
 
 export const papers = sqliteTable('papers', {

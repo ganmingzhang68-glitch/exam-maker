@@ -2,6 +2,7 @@ import type {
   ApiResponse,
   DifficultyLevel,
   Question,
+  QuestionDetail,
   QuestionListItem,
   QuestionSource,
   QuestionStatus,
@@ -17,6 +18,13 @@ export interface QuestionFilters {
   sourceProjectId?: number;
   limit?: number;
   offset?: number;
+  courseId?: number;
+  origin?: Question['origin'];
+  lifecycleStatus?: Question['lifecycleStatus'];
+  search?: string;
+  knowledgePoint?: string;
+  usage?: 'used' | 'unused';
+  sort?: 'updated_desc' | 'updated_asc' | 'score_desc' | 'score_asc';
 }
 
 export async function listQuestions(filters: QuestionFilters = {}): Promise<QuestionListItem[]> {
@@ -29,9 +37,19 @@ export async function listQuestionSources(): Promise<QuestionSource[]> {
   return response.data.data ?? [];
 }
 
-export async function getQuestion(id: number): Promise<Question> {
-  const response = await api.get<ApiResponse<Question>>(`/questions/${id}`);
+export async function getQuestion(id: number): Promise<QuestionDetail> {
+  const response = await api.get<ApiResponse<QuestionDetail>>(`/questions/${id}`);
   return response.data.data!;
+}
+
+export async function copyQuestion(id: number): Promise<Question> {
+  const response = await api.post<ApiResponse<Question>>(`/questions/${id}/copy`);
+  return response.data.data!;
+}
+
+export async function bulkQuestionAction(questionIds: number[], action: 'archive' | 'approve'): Promise<number> {
+  const response = await api.patch<ApiResponse<{ updated: number }>>('/questions/bulk', { questionIds, action });
+  return response.data.data?.updated ?? 0;
 }
 
 export async function updateQuestion(id: number, values: Partial<Question>): Promise<Question> {

@@ -12,6 +12,7 @@ import {
   Tag,
   Typography,
   message,
+  Input,
 } from 'antd';
 import type { TableColumnsType } from 'antd';
 import {
@@ -27,13 +28,17 @@ import type {
   QuestionSource,
   QuestionStatus,
   QuestionType,
+  CourseDetail,
 } from '@exam-maker/shared';
 import {
   deleteQuestion,
+  bulkQuestionAction,
+  copyQuestion,
   listQuestionSources,
   listQuestions,
   reviewQuestion,
 } from '../services/question';
+import { listCourses } from '../services/course';
 import {
   difficultyLabels,
   questionStatusColors,
@@ -55,12 +60,21 @@ const QuestionBank: React.FC<QuestionBankProps> = ({ reviewMode = false }) => {
   const navigate = useNavigate();
   const [questions, setQuestions] = useState<QuestionListItem[]>([]);
   const [sources, setSources] = useState<QuestionSource[]>([]);
+  const [courses, setCourses] = useState<CourseDetail[]>([]);
+  const [selectedIds, setSelectedIds] = useState<React.Key[]>([]);
   const [loading, setLoading] = useState(false);
   const [filters, setFilters] = useState<{
     status?: QuestionStatus;
     type?: QuestionType;
     difficulty?: DifficultyLevel;
     sourceFileId?: number;
+    courseId?: number;
+    origin?: QuestionListItem['origin'];
+    lifecycleStatus?: QuestionListItem['lifecycleStatus'];
+    search?: string;
+    knowledgePoint?: string;
+    usage?: 'used' | 'unused';
+    sort?: 'updated_desc' | 'updated_asc' | 'score_desc' | 'score_asc';
   }>({ status: reviewMode ? 'generated' : undefined });
 
   const loadQuestions = useCallback(async () => {
@@ -80,6 +94,7 @@ const QuestionBank: React.FC<QuestionBankProps> = ({ reviewMode = false }) => {
 
   useEffect(() => {
     listQuestionSources().then(setSources).catch(() => undefined);
+    listCourses().then(setCourses).catch(() => undefined);
   }, []);
 
   const changeReviewStatus = async (
@@ -167,6 +182,8 @@ const QuestionBank: React.FC<QuestionBankProps> = ({ reviewMode = false }) => {
           <Button size="small" icon={<EditOutlined />} onClick={() => navigate(`/questions/${record.id}/edit`)}>
             编辑
           </Button>
+          <Button size="small" onClick={() => navigate(`/questions/${record.id}`)}>详情</Button>
+          <Button size="small" onClick={async () => { await copyQuestion(record.id); message.success('题目已复制'); await loadQuestions(); }}>复制</Button>
           {record.status !== 'reviewed' && (
             <Button
               size="small"
@@ -204,6 +221,8 @@ const QuestionBank: React.FC<QuestionBankProps> = ({ reviewMode = false }) => {
 
       <Card size="small" style={{ marginBottom: 16 }}>
         <Space wrap>
+          <Input.Search allowClear placeholder="搜索题干" style={{ width: 220 }} value={filters.search} onChange={(event) => setFilters((current) => ({ ...current, search: event.target.value || undefined }))} />
+          <Select allowClear placeholder="课程" style={{ width: 180 }} value={filters.courseId} options={courses.map((course) => ({ value: course.id, label: course.name }))} onChange={(courseId) => setFilters((current) => ({ ...current, courseId }))} />
           {!reviewMode && (
             <Select
               allowClear
@@ -222,6 +241,10 @@ const QuestionBank: React.FC<QuestionBankProps> = ({ reviewMode = false }) => {
             options={Object.entries(questionTypeLabels).map(([value, label]) => ({ value, label }))}
             onChange={(type) => setFilters((current) => ({ ...current, type }))}
           />
+          <Input allowClear placeholder="考点" style={{ width: 140 }} value={filters.knowledgePoint} onChange={(event) => setFilters((current) => ({ ...current, knowledgePoint: event.target.value || undefined }))} />
+          <Select allowClear placeholder="题目来源" style={{ width: 140 }} value={filters.origin} options={[{ value: 'past_exam', label: '往年真题' }, { value: 'ai_generated', label: 'AI 生成' }, { value: 'teacher_created', label: '教师创建' }, { value: 'imported', label: '导入' }]} onChange={(origin) => setFilters((current) => ({ ...current, origin }))} />
+          <Select allowClear placeholder="使用状态" style={{ width: 120 }} value={filters.usage} options={[{ value: 'used', label: '已使用' }, { value: 'unused', label: '未使用' }]} onChange={(usage) => setFilters((current) => ({ ...current, usage }))} />
+          <Select placeholder="排序" style={{ width: 140 }} value={filters.sort ?? 'updated_desc'} options={[{ value: 'updated_desc', label: '最近更新' }, { value: 'updated_asc', label: '最早更新' }, { value: 'score_desc', label: '分值从高到低' }, { value: 'score_asc', label: '分值从低到高' }]} onChange={(sort) => setFilters((current) => ({ ...current, sort }))} />
           <Select
             allowClear
             placeholder="难度"
@@ -252,6 +275,8 @@ const QuestionBank: React.FC<QuestionBankProps> = ({ reviewMode = false }) => {
         loading={loading}
         columns={columns}
         dataSource={questions}
+        rowSelection={{ selectedRowKeys: selectedIds, onChange: setSelectedIds }}
+        title={() => selectedIds.length ? <Space><Text>已选择 {selectedIds.length} 道题</Text><Button onClick={async () => { await bulkQuestionAction(selectedIds.map(Number), 'approve'); setSelectedIds([]); await loadQuestions(); }}>批量批准</Button><Button danger onClick={async () => { await bulkQuestionAction(selectedIds.map(Number), 'archive'); setSelectedIds([]); await loadQuestions(); }}>批量归档</Button></Space> : null}
         scroll={{ x: 1150 }}
         locale={{ emptyText: <Empty description={reviewMode ? '没有待审核题目' : '题库暂无题目'} /> }}
         pagination={{ pageSize: 10, showSizeChanger: true, showTotal: (total) => `共 ${total} 道题` }}

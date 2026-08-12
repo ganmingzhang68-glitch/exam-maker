@@ -87,6 +87,7 @@ test('teacher question review to paper workflow is permission-safe and locks pub
     });
     assert.equal(edited.status, 200);
     assert.equal(edited.body.data?.stem, '教师修改后的题干');
+    assert.equal(db.select().from(schema.questionVersions).all().length, 1, 'editing creates an immutable prior version');
 
     const invalidChoiceEdit = await request(`/questions/${questionId}`, {
       method: 'PATCH', token: teacherToken, body: { options: ['只有一个选项'] },
@@ -117,6 +118,12 @@ test('teacher question review to paper workflow is permission-safe and locks pub
     assert.equal(filtered.status, 200);
     assert.deepEqual(filtered.body.data?.map((item) => item.id), [questionId]);
     assert.equal(filtered.body.data?.[0].sourceFileName, 'paper-1.tex');
+
+    const productFiltered = await request<Array<{ id: number; origin: string; usageCount: number }>>(
+      '/questions?search=教师修改&origin=past_exam&lifecycleStatus=approved&usage=unused&sort=score_desc',
+      { token: teacherToken },
+    );
+    assert.deepEqual(productFiltered.body.data?.map((item) => item.id), [questionId]);
 
     const paperCreated = await request<{ id: number; totalScore: number }>('/papers', {
       method: 'POST', token: teacherToken,
@@ -178,6 +185,11 @@ test('teacher question review to paper workflow is permission-safe and locks pub
       method: 'PATCH', token: teacherToken, body: { score: 99 },
     });
     assert.equal(lockedScore.status, 409);
+
+    const safeDelete = await request(`/questions/${questionId}`, { method: 'DELETE', token: teacherToken });
+    assert.equal(safeDelete.status, 200);
+    assert.equal(db.select().from(schema.questions).all().find((item) => item.id === questionId)?.lifecycleStatus, 'archived');
+    assert.ok(db.select().from(schema.questions).all().some((item) => item.id === questionId), 'used question is never physically deleted');
   } finally {
     await new Promise<void>((resolve, reject) => {
       server.close((error) => error ? reject(error) : resolve());
