@@ -100,6 +100,37 @@ export interface ApiResponse<T = unknown> {
   error?: string;
 }
 
+// ============ Course management ============
+export type CourseStatus = 'draft' | 'active' | 'archived';
+
+export interface CourseRecord {
+  id: number;
+  ownerUserId: number;
+  code: string | null;
+  name: string;
+  semester: string | null;
+  description: string | null;
+  instructorName: string | null;
+  materialDocumentIds: number[];
+  status: CourseStatus;
+  archivedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CourseSummary {
+  classCount: number;
+  materialCount: number;
+  questionCount: number;
+  paperCount: number;
+  examCount: number;
+  gradedAttemptCount: number;
+}
+
+export interface CourseDetail extends CourseRecord {
+  summary: CourseSummary;
+}
+
 // ============ Auth ============
 export interface LoginRequest {
   username: string;

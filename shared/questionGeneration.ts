@@ -149,8 +149,11 @@ export const courseSchema = entityIdentitySchema.extend({
   ownerUserId: z.number().int().positive(),
   code: z.string().trim().min(1).nullable(),
   name: z.string().trim().min(1),
+  semester: z.string().nullable(),
   description: z.string().nullable(),
+  instructorName: z.string().nullable(),
   materialDocumentIds: z.array(z.number().int().positive()).default([]),
+  archivedAt: z.string().nullable(),
 });
 
 export const sourceDocumentSchema = entityIdentitySchema.extend({

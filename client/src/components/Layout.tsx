@@ -14,6 +14,7 @@ import {
   CalendarOutlined,
   SolutionOutlined,
   RobotOutlined,
+  ReadOutlined,
 } from '@ant-design/icons';
 import { useAuthStore } from '../store/authStore';
 
@@ -29,6 +30,7 @@ const AppLayout: React.FC = () => {
   const menuItems = user?.role === 'student'
     ? [{ key: '/student/exams', icon: <SolutionOutlined />, label: '我的考试' }]
     : [
+      { key: '/courses', icon: <ReadOutlined />, label: '课程管理' },
       { key: '/', icon: <ProjectOutlined />, label: '出卷项目' },
       { key: '/projects/new', icon: <PlusOutlined />, label: '新建项目' },
       { key: '/questions/generate', icon: <RobotOutlined />, label: '快速仿题' },
@@ -40,6 +42,8 @@ const AppLayout: React.FC = () => {
 
   const selectedMenuKey = location.pathname.startsWith('/student/exams') || location.pathname.startsWith('/attempts/')
     ? '/student/exams'
+    : location.pathname.startsWith('/courses')
+    ? '/courses'
     : location.pathname.startsWith('/questions/review')
     ? '/questions/review'
     : location.pathname.startsWith('/questions/generate')

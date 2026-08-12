@@ -9,6 +9,7 @@ import { promptAiRunMetadataMigration } from './migrations/006_prompt_ai_run_met
 import { answerAlignmentMigration } from './migrations/007_answer_alignment.js';
 import { secureExportArtifactsMigration } from './migrations/008_secure_export_artifacts.js';
 import { similarQuestionPipelineMigration } from './migrations/009_similar_question_pipeline.js';
+import { courseManagementMigration } from './migrations/010_course_management.js';
 
 interface Migration {
   id: string;
@@ -25,6 +26,7 @@ const migrations: Migration[] = [
   answerAlignmentMigration,
   secureExportArtifactsMigration,
   similarQuestionPipelineMigration,
+  courseManagementMigration,
 ];
 
 export function runMigrations(database: Database = rawDb): void {

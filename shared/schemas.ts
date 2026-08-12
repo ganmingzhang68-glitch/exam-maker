@@ -85,6 +85,28 @@ export const questionListQuerySchema = z.object({
 
 export const positiveIdSchema = z.coerce.number().int().positive();
 
+// ============ Course management ============
+export const courseStatusSchema = z.enum(['draft', 'active', 'archived']);
+
+export const createCourseSchema = z.object({
+  name: z.string().trim().min(1, '课程名称不能为空').max(200),
+  code: z.string().trim().max(100).nullable().optional(),
+  semester: z.string().trim().max(100).nullable().optional(),
+  description: z.string().trim().max(5000).nullable().optional(),
+  instructorName: z.string().trim().max(200).nullable().optional(),
+  status: courseStatusSchema.default('draft'),
+}).strict();
+
+export const updateCourseSchema = createCourseSchema.partial().refine(
+  (value) => Object.keys(value).length > 0,
+  '至少提供一个要修改的字段',
+);
+
+export const courseListQuerySchema = z.object({
+  status: courseStatusSchema.optional(),
+  search: z.string().trim().max(200).optional(),
+}).strict();
+
 export const reviewQuestionSchema = z.object({
   status: z.enum(['reviewed', 'rejected']),
 });

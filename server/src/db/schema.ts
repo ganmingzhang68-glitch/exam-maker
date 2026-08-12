@@ -15,9 +15,12 @@ export const courses = sqliteTable('courses', {
   ownerUserId: integer('owner_user_id').notNull().references(() => users.id),
   code: text('code'),
   name: text('name').notNull(),
+  semester: text('semester'),
   description: text('description'),
+  instructorName: text('instructor_name'),
   materialDocumentIds: text('material_document_ids').notNull().default('[]'),
   status: text('status').notNull().default('draft'),
+  archivedAt: text('archived_at'),
   createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
   updatedAt: text('updated_at').notNull().default(sql`(datetime('now'))`),
 }, (table) => ({
