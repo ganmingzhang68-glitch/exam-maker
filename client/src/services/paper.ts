@@ -1,4 +1,4 @@
-import type { ApiResponse, Paper, PaperDetail, PaperStatus } from '@exam-maker/shared';
+import type { ApiResponse, Paper, PaperDetail, PaperStatus, PaperSummary } from '@exam-maker/shared';
 import api from './api';
 
 export interface CreatePaperInput {
@@ -9,11 +9,18 @@ export interface CreatePaperInput {
   durationMinutes?: number;
   status?: PaperStatus;
   sourceProjectId?: number | null;
+  courseId?: number | null;
+  creationMethod?: 'ai_generated' | 'manual' | 'imported';
 }
 
-export async function listPapers(status?: PaperStatus): Promise<Paper[]> {
-  const response = await api.get<ApiResponse<Paper[]>>('/papers', { params: status ? { status } : {} });
+export async function listPapers(params?: { status?: PaperStatus; courseId?: number; search?: string }): Promise<PaperSummary[]> {
+  const response = await api.get<ApiResponse<PaperSummary[]>>('/papers', { params });
   return response.data.data ?? [];
+}
+
+export async function copyPaper(id: number): Promise<PaperDetail> {
+  const response = await api.post<ApiResponse<PaperDetail>>(`/papers/${id}/copy`);
+  return response.data.data!;
 }
 
 export async function createPaper(values: CreatePaperInput): Promise<PaperDetail> {

@@ -674,6 +674,7 @@ export const questionVersions = sqliteTable('question_versions', {
 export const papers = sqliteTable('papers', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   createdBy: integer('created_by').notNull().references(() => users.id),
+  courseId: integer('course_id').references(() => courses.id, { onDelete: 'set null' }),
   sourceProjectId: integer('source_project_id').references(() => projects.id, { onDelete: 'set null' }),
   title: text('title').notNull(),
   course: text('course').notNull(),
@@ -682,6 +683,7 @@ export const papers = sqliteTable('papers', {
   durationMinutes: integer('duration_minutes').notNull().default(120),
   totalScore: real('total_score').notNull().default(0),
   status: text('status', { enum: ['draft', 'ready', 'archived'] }).notNull().default('draft'),
+  creationMethod: text('creation_method', { enum: ['ai_generated', 'manual', 'imported'] }).notNull().default('manual'),
   createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
   updatedAt: text('updated_at').notNull().default(sql`(datetime('now'))`),
 }, (table) => ({

@@ -3,6 +3,7 @@ import { requireAuth, requireRole } from '../middleware/auth.js';
 import {
   addPaperQuestion,
   createPaper,
+  copyPaper,
   deletePaper,
   getPaper,
   listPapers,
@@ -17,6 +18,7 @@ router.use(requireAuth, requireRole('teacher', 'admin'));
 
 router.get('/', listPapers);
 router.post('/', createPaper);
+router.post('/:id/copy', copyPaper);
 router.get('/:id', getPaper);
 router.patch('/:id', updatePaper);
 router.delete('/:id', deletePaper);

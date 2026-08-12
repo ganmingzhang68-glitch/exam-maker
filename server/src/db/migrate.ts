@@ -12,6 +12,7 @@ import { similarQuestionPipelineMigration } from './migrations/009_similar_quest
 import { courseManagementMigration } from './migrations/010_course_management.js';
 import { classEnrollmentMigration } from './migrations/011_class_enrollment.js';
 import { questionBankV1Migration } from './migrations/012_question_bank_v1.js';
+import { paperLibraryV1Migration } from './migrations/013_paper_library_v1.js';
 
 interface Migration {
   id: string;
@@ -31,6 +32,7 @@ const migrations: Migration[] = [
   courseManagementMigration,
   classEnrollmentMigration,
   questionBankV1Migration,
+  paperLibraryV1Migration,
 ];
 
 export function runMigrations(database: Database = rawDb): void {

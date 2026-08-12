@@ -196,12 +196,16 @@ export const createPaperSchema = z.object({
   durationMinutes: z.number().int().min(1).max(1440).default(120),
   status: paperStatusSchema.default('draft'),
   sourceProjectId: z.number().int().positive().nullable().optional(),
+  courseId: z.number().int().positive().nullable().optional(),
+  creationMethod: z.enum(['ai_generated', 'manual', 'imported']).default('manual'),
 });
 
 export const updatePaperSchema = createPaperSchema.partial();
 
 export const paperListQuerySchema = z.object({
   status: paperStatusSchema.optional(),
+  courseId: z.coerce.number().int().positive().optional(),
+  search: z.string().trim().max(200).optional(),
 });
 
 export const addPaperQuestionSchema = z.object({

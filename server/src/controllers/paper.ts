@@ -1,5 +1,5 @@
 import type { NextFunction, Response } from 'express';
-import { and, desc, eq, isNotNull, or } from 'drizzle-orm';
+import { and, desc, eq, isNotNull, like, or } from 'drizzle-orm';
 import {
   addPaperQuestionSchema,
   createPaperSchema,
@@ -117,17 +117,36 @@ function getPaperDetail(paperId: number) {
   };
 }
 
+function paperSummary(paper: PaperRow) {
+  const questions = db.select({ difficulty: schema.questions.difficulty }).from(schema.paperQuestions)
+    .innerJoin(schema.questions, eq(schema.paperQuestions.questionId, schema.questions.id))
+    .where(eq(schema.paperQuestions.paperId, paper.id)).all();
+  const usageCount = db.select({ id: schema.exams.id }).from(schema.exams).where(eq(schema.exams.paperId, paper.id)).all().length;
+  const weights = questions.map((item) => item.difficulty === 'hard' ? 3 : item.difficulty === 'medium' ? 2 : 1);
+  const average = weights.length ? weights.reduce((sum, value) => sum + value, 0) / weights.length : 0;
+  const estimatedDifficulty = average ? average >= 2.5 ? 'hard' : average >= 1.5 ? 'medium' : 'basic' : null;
+  return { ...paper, questionCount: questions.length, usageCount, estimatedDifficulty, displayStatus: usageCount ? 'used' : paper.status };
+}
+
+function assertCourseOwnership(req: AuthRequest, courseId: number | null | undefined): void {
+  if (!courseId || req.userRole === 'admin') return;
+  const course = db.select().from(schema.courses).where(and(eq(schema.courses.id, courseId), eq(schema.courses.ownerUserId, req.userId!))).get();
+  if (!course) throw new AppError(400, '课程不存在或无权访问');
+}
+
 export function listPapers(req: AuthRequest, res: Response, next: NextFunction) {
   try {
     const query = paperListQuerySchema.parse(req.query);
     const conditions = [];
     if (req.userRole !== 'admin') conditions.push(eq(schema.papers.createdBy, req.userId!));
     if (query.status) conditions.push(eq(schema.papers.status, query.status));
+    if (query.courseId) conditions.push(eq(schema.papers.courseId, query.courseId));
+    if (query.search) conditions.push(like(schema.papers.title, `%${query.search}%`));
     const rows = db.select().from(schema.papers)
       .where(conditions.length ? and(...conditions) : undefined)
       .orderBy(desc(schema.papers.updatedAt))
       .all();
-    res.json({ success: true, data: rows });
+    res.json({ success: true, data: rows.map(paperSummary) });
   } catch (error) { next(error); }
 }
 
@@ -143,8 +162,10 @@ export function createPaper(req: AuthRequest, res: Response, next: NextFunction)
   try {
     const data = createPaperSchema.parse(req.body);
     assertSourceProjectOwnership(req, data.sourceProjectId);
+    assertCourseOwnership(req, data.courseId);
     const row = db.insert(schema.papers).values({
       createdBy: req.userId!,
+      courseId: data.courseId ?? null,
       sourceProjectId: data.sourceProjectId ?? null,
       title: data.title,
       course: data.course,
@@ -153,6 +174,7 @@ export function createPaper(req: AuthRequest, res: Response, next: NextFunction)
       durationMinutes: data.durationMinutes,
       totalScore: 0,
       status: data.status,
+      creationMethod: data.creationMethod,
     }).returning().get();
     saveToDisk();
     res.status(201).json({ success: true, data: { ...row, questions: [] } });
@@ -166,6 +188,7 @@ export function updatePaper(req: AuthRequest, res: Response, next: NextFunction)
     assertPaperMutable(paper);
     const data = updatePaperSchema.parse(req.body);
     assertSourceProjectOwnership(req, data.sourceProjectId);
+    assertCourseOwnership(req, data.courseId);
     const row = db.update(schema.papers).set({
       ...data,
       updatedAt: new Date().toISOString(),
@@ -178,14 +201,30 @@ export function updatePaper(req: AuthRequest, res: Response, next: NextFunction)
 export function deletePaper(req: AuthRequest, res: Response, next: NextFunction) {
   try {
     const id = positiveIdSchema.parse(req.params.id);
-    const paper = getOwnedPaper(req, id);
-    assertPaperMutable(paper);
-    const linkedExam = db.select({ id: schema.exams.id }).from(schema.exams)
-      .where(eq(schema.exams.paperId, id)).limit(1).get();
-    if (linkedExam) throw new AppError(409, '试卷已关联考试，不能删除');
-    db.delete(schema.papers).where(eq(schema.papers.id, id)).run();
+    getOwnedPaper(req, id);
+    db.update(schema.papers).set({ status: 'archived', updatedAt: new Date().toISOString() })
+      .where(eq(schema.papers.id, id)).run();
     saveToDisk();
-    res.json({ success: true, message: '试卷已删除' });
+    res.json({ success: true, message: '试卷已归档' });
+  } catch (error) { next(error); }
+}
+
+export function copyPaper(req: AuthRequest, res: Response, next: NextFunction) {
+  try {
+    const source = getOwnedPaper(req, positiveIdSchema.parse(req.params.id));
+    const now = new Date().toISOString();
+    const row = db.insert(schema.papers).values({
+      createdBy: req.userId!, courseId: source.courseId, sourceProjectId: null,
+      title: `${source.title}（副本）`, course: source.course, description: source.description,
+      instructions: source.instructions, durationMinutes: source.durationMinutes,
+      totalScore: source.totalScore, status: 'draft', creationMethod: 'manual', updatedAt: now,
+    }).returning().get();
+    const questions = db.select().from(schema.paperQuestions).where(eq(schema.paperQuestions.paperId, source.id)).orderBy(schema.paperQuestions.orderNo).all();
+    questions.forEach((item) => db.insert(schema.paperQuestions).values({
+      paperId: row.id, questionId: item.questionId, sectionTitle: item.sectionTitle,
+      orderNo: item.orderNo, score: item.score, questionSnapshot: item.questionSnapshot,
+    }).run());
+    saveToDisk(); res.status(201).json({ success: true, data: getPaperDetail(row.id) });
   } catch (error) { next(error); }
 }
 

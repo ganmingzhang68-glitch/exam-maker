@@ -186,6 +186,14 @@ test('teacher question review to paper workflow is permission-safe and locks pub
     });
     assert.equal(lockedScore.status, 409);
 
+    const copiedPaper = await request<{ id: number; questions: Array<{ questionId: number }> }>(`/papers/${paperId}/copy`, { method: 'POST', token: teacherToken });
+    assert.equal(copiedPaper.status, 201);
+    assert.deepEqual(copiedPaper.body.data?.questions.map((item) => item.questionId), [secondId, questionId]);
+
+    const archivePaper = await request(`/papers/${paperId}`, { method: 'DELETE', token: teacherToken });
+    assert.equal(archivePaper.status, 200);
+    assert.equal(db.select().from(schema.papers).all().find((item) => item.id === paperId)?.status, 'archived');
+
     const safeDelete = await request(`/questions/${questionId}`, { method: 'DELETE', token: teacherToken });
     assert.equal(safeDelete.status, 200);
     assert.equal(db.select().from(schema.questions).all().find((item) => item.id === questionId)?.lifecycleStatus, 'archived');

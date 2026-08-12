@@ -322,6 +322,7 @@ export type PaperStatus = 'draft' | 'ready' | 'archived';
 export interface Paper {
   id: number;
   createdBy: number;
+  courseId: number | null;
   sourceProjectId: number | null;
   title: string;
   course: string;
@@ -330,9 +331,12 @@ export interface Paper {
   durationMinutes: number;
   totalScore: number;
   status: PaperStatus;
+  creationMethod: 'ai_generated' | 'manual' | 'imported';
   createdAt: string;
   updatedAt: string;
 }
+
+export interface PaperSummary extends Paper { questionCount: number; usageCount: number; estimatedDifficulty: DifficultyLevel | null; displayStatus: PaperStatus | 'used' }
 
 export interface PaperQuestion {
   id: number;
