@@ -43,7 +43,7 @@ export const questionTypeSchema = z.enum([
 export const questionStatusSchema = z.enum(['generated', 'reviewed', 'rejected']);
 export const difficultyLevelSchema = z.enum(['basic', 'medium', 'hard']);
 export const questionOriginSchema = z.enum(['past_exam', 'ai_generated', 'teacher_created', 'imported']);
-export const questionLifecycleStatusSchema = z.enum(['draft', 'reviewed', 'approved', 'archived']);
+export const questionLifecycleStatusSchema = z.enum(['draft', 'reviewed', 'approved', 'needs_review', 'archived']);
 
 const questionFieldsSchema = z.object({
   type: questionTypeSchema,
@@ -101,6 +101,10 @@ export const bulkQuestionActionSchema = z.object({
 }).strict();
 
 export const positiveIdSchema = z.coerce.number().int().positive();
+
+export const reviewQuestionQualitySchema = z.object({
+  action: z.enum(['confirm', 'ignore', 'needs_revision']),
+}).strict();
 
 // ============ Course management ============
 export const courseStatusSchema = z.enum(['draft', 'active', 'archived']);

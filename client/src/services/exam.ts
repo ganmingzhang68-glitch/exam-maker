@@ -91,6 +91,10 @@ export async function getExamAssessment(examId: number): Promise<ExamAssessment>
   return response.data.data!;
 }
 
+export async function reviewExamQuestionQuality(examId: number, paperQuestionId: number, action: 'confirm' | 'ignore' | 'needs_revision'): Promise<void> {
+  await api.post(`/exams/${examId}/quality/questions/${paperQuestionId}/review`, { action });
+}
+
 export async function getTeacherAttemptResult(
   examId: number,
   attemptId: number,

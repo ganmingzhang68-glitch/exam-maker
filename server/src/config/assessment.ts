@@ -11,4 +11,7 @@ export const assessmentConfig = Object.freeze({
   tooHardCorrectRate: numberEnv('ASSESSMENT_TOO_HARD_RATE', 0.3, 0, 0.5),
   lowDiscrimination: numberEnv('ASSESSMENT_LOW_DISCRIMINATION', 0.2, -1, 1),
   negativeDiscrimination: numberEnv('ASSESSMENT_NEGATIVE_DISCRIMINATION', 0, -1, 1),
+  weakDistractorRate: numberEnv('ASSESSMENT_WEAK_DISTRACTOR_RATE', 0.05, 0, 0.5),
+  suspiciousHighGroupGap: numberEnv('ASSESSMENT_SUSPICIOUS_OPTION_GAP', 0.1, 0, 1),
+  highBlankRate: numberEnv('ASSESSMENT_HIGH_BLANK_RATE', 0.2, 0, 1),
 });

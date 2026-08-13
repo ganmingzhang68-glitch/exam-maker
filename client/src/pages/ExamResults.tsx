@@ -4,7 +4,7 @@ import { Alert, Button, Card, Col, Row, Space, Statistic, Table, Tag, Typography
 import type { TableColumnsType } from 'antd';
 import { ArrowLeftOutlined, FormOutlined, ReloadOutlined } from '@ant-design/icons';
 import type { AssessmentItemMetric, Attempt, ExamAssessment, TeacherExamStudentResult } from '@exam-maker/shared';
-import { getExamAssessment, listExamResults, listTeacherExams } from '../services/exam';
+import { getExamAssessment, listExamResults, listTeacherExams, reviewExamQuestionQuality } from '../services/exam';
 
 const { Title, Text } = Typography;
 
@@ -79,6 +79,13 @@ const ExamResults: React.FC = () => {
 
   const percent = (value: number | null) => value === null ? '—' : `${(value * 100).toFixed(1)}%`;
   const metric = (value: number | null, digits = 2) => value === null ? '—' : value.toFixed(digits);
+  const reviewQuality = async (item: AssessmentItemMetric, action: 'confirm' | 'ignore' | 'needs_revision') => {
+    try {
+      await reviewExamQuestionQuality(examId, item.paperQuestionId, action);
+      setAssessment(await getExamAssessment(examId));
+      message.success(action === 'needs_revision' ? '已加入题库待修订' : '处理状态已保存');
+    } catch (error) { message.error(errorMessage(error, '保存题目质量处理状态失败')); }
+  };
   const needsAttention = assessment?.items.filter(item => item.flags.some(flag => flag !== 'INSUFFICIENT_SAMPLE')) ?? [];
   const qualityColumns: TableColumnsType<AssessmentItemMetric> = [
     { title: '题目', dataIndex: 'orderNo', width: 70, render: (value: number) => `Q${value}` },
@@ -91,6 +98,11 @@ const ExamResults: React.FC = () => {
     { title: '提示', dataIndex: 'flags', width: 180, render: (flags: string[], row) => row.status === 'insufficient_sample'
       ? <Tag>样本不足，仅供参考</Tag>
       : flags.length ? flags.map(flag => <Tag key={flag} color="warning">{flag}</Tag>) : <Tag color="success">暂无统计异常</Tag> },
+    { title: '处理', width: 210, render: (_: unknown, row) => <Space size={4}>
+      <Button size="small" type={row.reviewStatus === 'confirmed' ? 'primary' : 'default'} onClick={() => void reviewQuality(row, 'confirm')}>确认</Button>
+      <Button size="small" type={row.reviewStatus === 'ignored' ? 'primary' : 'default'} onClick={() => void reviewQuality(row, 'ignore')}>忽略</Button>
+      <Button size="small" danger={row.reviewStatus !== 'needs_revision'} type={row.reviewStatus === 'needs_revision' ? 'primary' : 'default'} onClick={() => void reviewQuality(row, 'needs_revision')}>待修订</Button>
+    </Space> },
   ];
 
   return (
@@ -122,7 +134,15 @@ const ExamResults: React.FC = () => {
               message={`Q${item.orderNo}：建议教师复核`} description={`正确率 ${percent(item.correctRate)}，区分度 ${metric(item.discriminationIndex)}；标记：${item.flags.join('、')}`} />)}</Space>}
       </Card>
       <Table<AssessmentItemMetric> rowKey="paperQuestionId" size="small" loading={loading} columns={qualityColumns}
-        dataSource={assessment?.items ?? []} pagination={false} scroll={{ x: 950 }} style={{ marginBottom: 24 }} />
+        dataSource={assessment?.items ?? []} pagination={false} scroll={{ x: 1150 }} style={{ marginBottom: 24 }}
+        expandable={{ rowExpandable: row => row.optionStatistics.length > 0, expandedRowRender: row => <Table
+          rowKey="optionId" size="small" pagination={false} dataSource={row.optionStatistics} columns={[
+            { title: '选项', dataIndex: 'optionId', width: 70 }, { title: '内容', dataIndex: 'text' },
+            { title: '全体选择率', dataIndex: 'selectionRate', render: percent },
+            { title: '高分组', dataIndex: 'highGroupSelectionRate', render: percent },
+            { title: '低分组', dataIndex: 'lowGroupSelectionRate', render: percent },
+            { title: '规则状态', dataIndex: 'status', render: (value: string, option) => <Tag color={value === 'effective' ? 'success' : 'warning'}>{option.isCorrect ? '正确选项' : value}</Tag> },
+          ]} /> }} />
       <Title level={4}>学生成绩</Title>
       <Table<ResultRow>
         rowKey="key"

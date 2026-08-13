@@ -244,6 +244,9 @@ const QuestionBank: React.FC<QuestionBankProps> = ({ reviewMode = false }) => {
           <Input allowClear placeholder="考点" style={{ width: 140 }} value={filters.knowledgePoint} onChange={(event) => setFilters((current) => ({ ...current, knowledgePoint: event.target.value || undefined }))} />
           <Select allowClear placeholder="题目来源" style={{ width: 140 }} value={filters.origin} options={[{ value: 'past_exam', label: '往年真题' }, { value: 'ai_generated', label: 'AI 生成' }, { value: 'teacher_created', label: '教师创建' }, { value: 'imported', label: '导入' }]} onChange={(origin) => setFilters((current) => ({ ...current, origin }))} />
           <Select allowClear placeholder="使用状态" style={{ width: 120 }} value={filters.usage} options={[{ value: 'used', label: '已使用' }, { value: 'unused', label: '未使用' }]} onChange={(usage) => setFilters((current) => ({ ...current, usage }))} />
+          <Select allowClear placeholder="质量状态" style={{ width: 130 }} value={filters.lifecycleStatus}
+            options={[{ value: 'approved', label: '质量正常' }, { value: 'needs_review', label: '需要复核' }, { value: 'draft', label: '草稿' }, { value: 'archived', label: '已归档' }]}
+            onChange={(lifecycleStatus) => setFilters((current) => ({ ...current, lifecycleStatus }))} />
           <Select placeholder="排序" style={{ width: 140 }} value={filters.sort ?? 'updated_desc'} options={[{ value: 'updated_desc', label: '最近更新' }, { value: 'updated_asc', label: '最早更新' }, { value: 'score_desc', label: '分值从高到低' }, { value: 'score_asc', label: '分值从低到高' }]} onChange={(sort) => setFilters((current) => ({ ...current, sort }))} />
           <Select
             allowClear

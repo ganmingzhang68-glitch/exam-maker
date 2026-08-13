@@ -237,7 +237,7 @@ export interface Question {
   status: QuestionStatus;
   aiGenerated: boolean;
   origin: 'past_exam' | 'ai_generated' | 'teacher_created' | 'imported';
-  lifecycleStatus: 'draft' | 'reviewed' | 'approved' | 'archived';
+  lifecycleStatus: 'draft' | 'reviewed' | 'approved' | 'needs_review' | 'archived';
   metadata: Record<string, unknown> | null;
   createdAt: string;
   updatedAt: string;
@@ -591,7 +591,18 @@ export interface AssessmentItemMetric {
   discriminationIndex: number | null;
   pointBiserialCorrelation: number | null;
   averageScoreRate: number | null;
+  blankRate: number;
+  optionStatistics: Array<{
+    optionId: string;
+    text: string;
+    isCorrect: boolean;
+    selectionRate: number | null;
+    highGroupSelectionRate: number | null;
+    lowGroupSelectionRate: number | null;
+    status: 'effective' | 'weak' | 'unused' | 'suspicious';
+  }>;
   flags: string[];
+  reviewStatus: 'pending' | 'confirmed' | 'ignored' | 'needs_revision';
 }
 
 export interface ExamAssessment {
@@ -607,6 +618,9 @@ export interface ExamAssessment {
     tooHardCorrectRate: number;
     lowDiscrimination: number;
     negativeDiscrimination: number;
+    weakDistractorRate: number;
+    suspiciousHighGroupGap: number;
+    highBlankRate: number;
   };
   summary: {
     participantCount: number;

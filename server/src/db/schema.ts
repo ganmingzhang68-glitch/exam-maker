@@ -657,7 +657,7 @@ export const questions = sqliteTable('questions', {
   status: text('status', { enum: ['generated', 'reviewed', 'rejected'] }).notNull().default('generated'),
   aiGenerated: integer('ai_generated', { mode: 'boolean' }).notNull().default(false),
   origin: text('origin', { enum: ['past_exam', 'ai_generated', 'teacher_created', 'imported'] }).notNull().default('teacher_created'),
-  lifecycleStatus: text('lifecycle_status', { enum: ['draft', 'reviewed', 'approved', 'archived'] }).notNull().default('draft'),
+  lifecycleStatus: text('lifecycle_status', { enum: ['draft', 'reviewed', 'approved', 'needs_review', 'archived'] }).notNull().default('draft'),
   metadata: text('metadata'),
   createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
   updatedAt: text('updated_at').notNull().default(sql`(datetime('now'))`),
@@ -793,4 +793,29 @@ export const answers = sqliteTable('answers', {
   attemptQuestionUnique: uniqueIndex('answers_attempt_question_unique')
     .on(table.attemptId, table.paperQuestionId),
   attemptIdx: index('answers_attempt_idx').on(table.attemptId),
+}));
+
+export const questionQualityReports = sqliteTable('question_quality_reports', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  examId: integer('exam_id').notNull().references(() => exams.id, { onDelete: 'cascade' }),
+  paperQuestionId: integer('paper_question_id').notNull().references(() => paperQuestions.id, { onDelete: 'cascade' }),
+  questionId: integer('question_id').notNull().references(() => questions.id, { onDelete: 'restrict' }),
+  sampleSize: integer('sample_size').notNull(),
+  correctRate: real('correct_rate'),
+  empiricalDifficulty: real('empirical_difficulty'),
+  discriminationIndex: real('discrimination_index'),
+  pointBiserial: real('point_biserial'),
+  optionStatistics: text('option_statistics').notNull().default('[]'),
+  blankRate: real('blank_rate').notNull().default(0),
+  averageScoreRate: real('average_score_rate'),
+  qualityFlags: text('quality_flags').notNull().default('[]'),
+  metricStatus: text('metric_status').notNull(),
+  reviewStatus: text('review_status', { enum: ['pending', 'confirmed', 'ignored', 'needs_revision'] }).notNull().default('pending'),
+  reviewedBy: integer('reviewed_by').references(() => users.id, { onDelete: 'set null' }),
+  reviewedAt: text('reviewed_at'),
+  createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
+  updatedAt: text('updated_at').notNull().default(sql`(datetime('now'))`),
+}, (table) => ({
+  examQuestionUnique: uniqueIndex('question_quality_reports_exam_question_unique').on(table.examId, table.paperQuestionId),
+  examStatusIdx: index('question_quality_reports_exam_status_idx').on(table.examId, table.reviewStatus),
 }));

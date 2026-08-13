@@ -8,6 +8,8 @@ export interface AssessmentItemInput {
   stem: string;
   type: QuestionType;
   maxScore: number;
+  options?: Array<{ id: string; text: string }>;
+  correctOptionIds?: string[];
 }
 
 export interface AssessmentResponseInput {
@@ -15,6 +17,7 @@ export interface AssessmentResponseInput {
   totalScore: number;
   itemScores: Record<number, number>;
   itemCorrect: Record<number, boolean | null>;
+  itemSelections?: Record<number, string[]>;
 }
 
 export interface AssessmentInput {
@@ -109,12 +112,32 @@ export function calculateAssessmentMetrics(input: AssessmentInput) {
     const binary = correctness.map(value => value === true ? 1 : 0);
     const restScores = input.responses.map((response, index) => response.totalScore - scores[index]);
     const pointBiserial = objective && sampleStatus === 'ok' ? pearson(binary, restScores) : null;
+    const selectionRows = input.responses.map(response => response.itemSelections?.[item.paperQuestionId] ?? []);
+    const blankRate = sampleSize ? selectionRows.filter(values => values.length === 0).length / sampleSize : 0;
+    const correctIds = new Set(item.correctOptionIds ?? []);
+    const optionStatistics = (item.options ?? []).map(option => {
+      const selected = (rows: AssessmentResponseInput[]) => rows.length
+        ? rows.filter(response => response.itemSelections?.[item.paperQuestionId]?.includes(option.id)).length / rows.length : null;
+      const selectionRate = selected(input.responses);
+      const highGroupSelectionRate = sampleStatus === 'ok' ? selected(high) : null;
+      const lowGroupSelectionRate = sampleStatus === 'ok' ? selected(low) : null;
+      const isCorrect = correctIds.has(option.id);
+      let optionStatus: 'effective' | 'weak' | 'unused' | 'suspicious' = 'effective';
+      if (!isCorrect && selectionRate === 0) optionStatus = 'unused';
+      else if (!isCorrect && selectionRate !== null && selectionRate < config.weakDistractorRate) optionStatus = 'weak';
+      else if (!isCorrect && highGroupSelectionRate !== null && lowGroupSelectionRate !== null &&
+        highGroupSelectionRate - lowGroupSelectionRate >= config.suspiciousHighGroupGap) optionStatus = 'suspicious';
+      return { optionId: option.id, text: option.text, isCorrect, selectionRate: round(selectionRate),
+        highGroupSelectionRate: round(highGroupSelectionRate), lowGroupSelectionRate: round(lowGroupSelectionRate), status: optionStatus };
+    });
     const flags: string[] = [];
     if (sampleStatus !== 'ok') flags.push('INSUFFICIENT_SAMPLE');
     if (sampleStatus === 'ok' && correctRate !== null && correctRate >= config.tooEasyCorrectRate) flags.push('TOO_EASY');
     if (sampleStatus === 'ok' && correctRate !== null && correctRate <= config.tooHardCorrectRate) flags.push('TOO_HARD');
     if (sampleStatus === 'ok' && discrimination !== null && discrimination < config.negativeDiscrimination) flags.push('NEGATIVE_DISCRIMINATION');
     else if (sampleStatus === 'ok' && discrimination !== null && discrimination < config.lowDiscrimination) flags.push('LOW_DISCRIMINATION');
+    if (sampleStatus === 'ok' && optionStatistics.some(option => ['weak', 'unused', 'suspicious'].includes(option.status))) flags.push('WEAK_DISTRACTOR');
+    if (sampleStatus === 'ok' && blankRate >= config.highBlankRate) flags.push('HIGH_BLANK_RATE');
     return {
       paperQuestionId: item.paperQuestionId, questionId: item.questionId, orderNo: item.orderNo,
       stem: item.stem, type: item.type, maxScore: item.maxScore, sampleSize,
@@ -124,6 +147,8 @@ export function calculateAssessmentMetrics(input: AssessmentInput) {
       lowGroupCorrectRate: round(sampleStatus === 'ok' ? lowRate : null),
       discriminationIndex: round(discrimination), pointBiserialCorrelation: round(pointBiserial),
       averageScoreRate: round(mean(scoreRates)), flags,
+      blankRate: round(blankRate)!, optionStatistics,
+      reviewStatus: 'pending' as const,
     };
   });
   const alpha = sampleStatus === 'ok'

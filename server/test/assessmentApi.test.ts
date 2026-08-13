@@ -26,8 +26,10 @@ test('exam quality API is owner-scoped and reports insufficient samples without 
     const listening = app.listen(0, '127.0.0.1', () => resolve(listening));
   });
   const port = (server.address() as AddressInfo).port;
-  const call = async (userId: number) => {
-    const response = await fetch(`http://127.0.0.1:${port}/api/exams/1/quality`, { headers: { Authorization: `Bearer ${generateToken(userId, 'teacher')}` } });
+  const call = async (userId: number, path = '/api/exams/1/quality', options?: { method: string; body: unknown }) => {
+    const response = await fetch(`http://127.0.0.1:${port}${path}`, { method: options?.method,
+      headers: { Authorization: `Bearer ${generateToken(userId, 'teacher')}`, ...(options ? { 'Content-Type': 'application/json' } : {}) },
+      body: options ? JSON.stringify(options.body) : undefined });
     return { status: response.status, body: await response.json() as { data?: { sampleStatus: string; summary: { cronbachAlpha: number | null } } } };
   };
   try {
@@ -36,5 +38,9 @@ test('exam quality API is owner-scoped and reports insufficient samples without 
     assert.equal(owner.body.data?.sampleStatus, 'insufficient_sample');
     assert.equal(owner.body.data?.summary.cronbachAlpha, null);
     assert.equal((await call(2)).status, 403);
+    const review = await call(1, '/api/exams/1/quality/questions/1/review', { method: 'POST', body: { action: 'needs_revision' } });
+    assert.equal(review.status, 200);
+    assert.equal(db.select().from(schema.questionQualityReports).all()[0].reviewStatus, 'needs_revision');
+    assert.equal(db.select().from(schema.questions).all()[0].lifecycleStatus, 'needs_review');
   } finally { await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())); }
 });
