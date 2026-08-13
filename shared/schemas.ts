@@ -54,6 +54,8 @@ const questionFieldsSchema = z.object({
   scoringRubric: z.record(z.unknown()).nullable().optional(),
   defaultScore: z.number().min(0).max(1000).default(0),
   difficulty: difficultyLevelSchema.nullable().optional(),
+  predictedDifficultyScore: z.number().min(0).max(1).nullable().optional(),
+  teacherDifficultyScore: z.number().min(0).max(1).nullable().optional(),
   knowledgePoints: z.array(z.string().trim().min(1).max(100)).max(50).nullable().optional(),
   status: questionStatusSchema.default('generated'),
   sourceFileId: z.number().int().positive().nullable().optional(),

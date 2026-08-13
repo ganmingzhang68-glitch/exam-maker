@@ -15,6 +15,7 @@ import { questionBankV1Migration } from './migrations/012_question_bank_v1.js';
 import { paperLibraryV1Migration } from './migrations/013_paper_library_v1.js';
 import { productionJobsMigration } from './migrations/014_production_jobs.js';
 import { questionQualityReportsMigration } from './migrations/015_question_quality_reports.js';
+import { difficultyCalibrationMigration } from './migrations/016_difficulty_calibration.js';
 
 interface Migration {
   id: string;
@@ -37,6 +38,7 @@ const migrations: Migration[] = [
   paperLibraryV1Migration,
   productionJobsMigration,
   questionQualityReportsMigration,
+  difficultyCalibrationMigration,
 ];
 
 export function runMigrations(database: Database = rawDb): void {

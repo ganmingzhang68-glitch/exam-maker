@@ -233,6 +233,8 @@ export interface Question {
   scoringRubric: Record<string, unknown> | null;
   defaultScore: number;
   difficulty: DifficultyLevel | null;
+  predictedDifficultyScore: number | null;
+  teacherDifficultyScore: number | null;
   knowledgePoints: string[] | null;
   status: QuestionStatus;
   aiGenerated: boolean;
@@ -636,6 +638,33 @@ export interface ExamAssessment {
     averageDiscrimination: number | null;
   };
   items: AssessmentItemMetric[];
+}
+
+export type DifficultyCalibrationLabel = 'ai_underestimated' | 'ai_overestimated' | 'aligned' | 'unavailable';
+export interface DifficultyCalibrationRecord {
+  id: number;
+  questionId: number;
+  questionQualityReportId: number;
+  questionStem: string;
+  predictedDifficulty: number | null;
+  teacherDifficulty: number | null;
+  empiricalDifficulty: number;
+  sampleSize: number;
+  predictionError: number | null;
+  calibrationLabel: DifficultyCalibrationLabel;
+  createdAt: string;
+}
+
+export interface CourseDifficultyCalibration {
+  courseId: number;
+  sampleSize: number;
+  minimumSampleSize: number;
+  status: 'available' | 'insufficient_sample';
+  mae: number | null;
+  rmse: number | null;
+  bias: number | null;
+  computedAt: string;
+  records: DifficultyCalibrationRecord[];
 }
 
 export interface GradingQuestionDetail extends AttemptQuestionSnapshot {

@@ -19,6 +19,11 @@ test('foundation migration preserves old users and projects', async () => {
   for (const name of ['questions', 'papers', 'paper_questions', 'exams', 'exam_assignments', 'attempts', 'answers', 'similar_question_jobs', 'similar_question_job_stages']) {
     assert.ok(tables.has(name), `missing table ${name}`);
   }
+  assert.ok(tables.has('difficulty_calibration_records'));
+  assert.ok(tables.has('course_difficulty_calibrations'));
+  const questionColumns = new Set(database.exec('PRAGMA table_info(questions)')[0].values.map(row => String(row[1])));
+  assert.ok(questionColumns.has('predicted_difficulty_score'));
+  assert.ok(questionColumns.has('teacher_difficulty_score'));
   const aiRunColumns = new Set(database.exec('PRAGMA table_info(ai_runs)')[0].values.map(row => String(row[1])));
   const generatedColumns = new Set(database.exec('PRAGMA table_info(generated_questions)')[0].values.map(row => String(row[1])));
   assert.ok(aiRunColumns.has('similar_question_job_id'));

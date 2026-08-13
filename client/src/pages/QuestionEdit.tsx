@@ -35,6 +35,7 @@ interface QuestionFormValues {
   scoringRubricText?: string;
   defaultScore: number;
   difficulty?: DifficultyLevel;
+  teacherDifficultyScore?: number;
   knowledgePointsText?: string;
 }
 
@@ -83,6 +84,7 @@ const QuestionEdit: React.FC = () => {
         scoringRubricText: data.scoringRubric ? JSON.stringify(data.scoringRubric, null, 2) : undefined,
         defaultScore: data.defaultScore,
         difficulty: data.difficulty ?? undefined,
+        teacherDifficultyScore: data.teacherDifficultyScore ?? undefined,
         knowledgePointsText: data.knowledgePoints?.join('，') ?? undefined,
       });
     }).catch((error) => {
@@ -105,6 +107,7 @@ const QuestionEdit: React.FC = () => {
         scoringRubric: parseRecord(values.scoringRubricText),
         defaultScore: values.defaultScore,
         difficulty: values.difficulty ?? null,
+        teacherDifficultyScore: values.teacherDifficultyScore ?? null,
         knowledgePoints: values.knowledgePointsText
           ? values.knowledgePointsText.split(/[，,]/).map((item) => item.trim()).filter(Boolean)
           : null,
@@ -144,7 +147,7 @@ const QuestionEdit: React.FC = () => {
           来源题号：{question.sourceQuestionNo || '无'}；来源文件 ID：{question.sourceFileId || '无'}
         </Text>
         <Form form={form} layout="vertical">
-          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 16 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr', gap: 16 }}>
             <Form.Item name="type" label="题型" rules={[{ required: true }]}>
               <Select options={Object.entries(questionTypeLabels).map(([value, label]) => ({ value, label }))} />
             </Form.Item>
@@ -153,6 +156,9 @@ const QuestionEdit: React.FC = () => {
             </Form.Item>
             <Form.Item name="defaultScore" label="默认分值" rules={[{ required: true }]}>
               <InputNumber min={0} max={1000} style={{ width: '100%' }} />
+            </Form.Item>
+            <Form.Item name="teacherDifficultyScore" label="教师难度 (0-1)" extra={question.predictedDifficultyScore === null ? '无 AI 预测值' : `AI 预测：${question.predictedDifficultyScore.toFixed(2)}`}>
+              <InputNumber min={0} max={1} step={0.05} precision={2} style={{ width: '100%' }} />
             </Form.Item>
           </div>
           <Form.Item name="stem" label="题干" rules={[{ required: true, whitespace: true, message: '请输入题干' }]}>

@@ -1,6 +1,7 @@
 import { and, eq } from 'drizzle-orm';
 import type { ExamAssessment } from '@exam-maker/shared';
 import { db, saveToDisk, schema } from '../db/index.js';
+import { syncDifficultyCalibrationsForExam } from './difficultyCalibration.js';
 
 export function syncQuestionQualityReports(assessment: ExamAssessment): ExamAssessment {
   const now = new Date().toISOString();
@@ -22,6 +23,7 @@ export function syncQuestionQualityReports(assessment: ExamAssessment): ExamAsse
     }).run();
   }
   saveToDisk();
+  syncDifficultyCalibrationsForExam(assessment.examId);
   const reviewByQuestion = new Map(db.select().from(schema.questionQualityReports)
     .where(eq(schema.questionQualityReports.examId, assessment.examId)).all()
     .map(row => [row.paperQuestionId, row.reviewStatus]));

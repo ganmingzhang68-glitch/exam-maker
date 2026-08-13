@@ -14,4 +14,6 @@ export const assessmentConfig = Object.freeze({
   weakDistractorRate: numberEnv('ASSESSMENT_WEAK_DISTRACTOR_RATE', 0.05, 0, 0.5),
   suspiciousHighGroupGap: numberEnv('ASSESSMENT_SUSPICIOUS_OPTION_GAP', 0.1, 0, 1),
   highBlankRate: numberEnv('ASSESSMENT_HIGH_BLANK_RATE', 0.2, 0, 1),
+  calibrationTolerance: numberEnv('ASSESSMENT_CALIBRATION_TOLERANCE', 0.1, 0, 1),
+  minimumCalibrationRecords: numberEnv('ASSESSMENT_MIN_CALIBRATION_RECORDS', 10, 2, 1000),
 });

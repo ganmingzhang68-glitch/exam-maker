@@ -207,6 +207,8 @@ export function createQuestion(req: AuthRequest, res: Response, next: NextFuncti
       scoringRubric: data.scoringRubric ? JSON.stringify(data.scoringRubric) : null,
       defaultScore: data.defaultScore,
       difficulty: data.difficulty ?? null,
+      predictedDifficultyScore: data.predictedDifficultyScore ?? null,
+      teacherDifficultyScore: data.teacherDifficultyScore ?? null,
       knowledgePoints: data.knowledgePoints ? JSON.stringify(data.knowledgePoints) : null,
       status: data.status,
       aiGenerated: false,

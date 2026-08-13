@@ -653,6 +653,8 @@ export const questions = sqliteTable('questions', {
   scoringRubric: text('scoring_rubric'),
   defaultScore: real('default_score').notNull().default(0),
   difficulty: text('difficulty', { enum: ['basic', 'medium', 'hard'] }),
+  predictedDifficultyScore: real('predicted_difficulty_score'),
+  teacherDifficultyScore: real('teacher_difficulty_score'),
   knowledgePoints: text('knowledge_points'),
   status: text('status', { enum: ['generated', 'reviewed', 'rejected'] }).notNull().default('generated'),
   aiGenerated: integer('ai_generated', { mode: 'boolean' }).notNull().default(false),
@@ -818,4 +820,38 @@ export const questionQualityReports = sqliteTable('question_quality_reports', {
 }, (table) => ({
   examQuestionUnique: uniqueIndex('question_quality_reports_exam_question_unique').on(table.examId, table.paperQuestionId),
   examStatusIdx: index('question_quality_reports_exam_status_idx').on(table.examId, table.reviewStatus),
+}));
+
+export const difficultyCalibrationRecords = sqliteTable('difficulty_calibration_records', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  courseId: integer('course_id').notNull().references(() => courses.id, { onDelete: 'cascade' }),
+  questionId: integer('question_id').notNull().references(() => questions.id, { onDelete: 'restrict' }),
+  questionQualityReportId: integer('question_quality_report_id').notNull().references(() => questionQualityReports.id, { onDelete: 'cascade' }),
+  predictedDifficulty: real('predicted_difficulty'),
+  teacherDifficulty: real('teacher_difficulty'),
+  empiricalDifficulty: real('empirical_difficulty').notNull(),
+  sampleSize: integer('sample_size').notNull(),
+  predictionError: real('prediction_error'),
+  calibrationLabel: text('calibration_label', { enum: ['ai_underestimated', 'ai_overestimated', 'aligned', 'unavailable'] }).notNull(),
+  createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
+  updatedAt: text('updated_at').notNull().default(sql`(datetime('now'))`),
+}, (table) => ({
+  reportUnique: uniqueIndex('difficulty_calibration_records_report_unique').on(table.questionQualityReportId),
+  courseIdx: index('difficulty_calibration_records_course_idx').on(table.courseId, table.createdAt),
+  questionIdx: index('difficulty_calibration_records_question_idx').on(table.questionId, table.createdAt),
+}));
+
+export const courseDifficultyCalibrations = sqliteTable('course_difficulty_calibrations', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  courseId: integer('course_id').notNull().references(() => courses.id, { onDelete: 'cascade' }),
+  sampleSize: integer('sample_size').notNull().default(0),
+  mae: real('mae'),
+  rmse: real('rmse'),
+  bias: real('bias'),
+  status: text('status', { enum: ['available', 'insufficient_sample'] }).notNull().default('insufficient_sample'),
+  computedAt: text('computed_at').notNull(),
+  createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
+  updatedAt: text('updated_at').notNull().default(sql`(datetime('now'))`),
+}, (table) => ({
+  courseUnique: uniqueIndex('course_difficulty_calibrations_course_unique').on(table.courseId),
 }));
