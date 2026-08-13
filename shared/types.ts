@@ -417,6 +417,8 @@ export interface Exam {
   fillBlankIgnoreCase: boolean;
   showAnswers: boolean;
   showAnalysis: boolean;
+  gradeReviewEnabled: boolean;
+  gradeReviewDeadline: string | null;
   publishedAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -851,6 +853,14 @@ export interface TeachingAnalytics {
   rules: string[];
 }
 
+export interface GradeReview {
+  id: number; examId: number; examTitle: string; attemptId: number; answerId: number | null; studentId: number; studentName: string;
+  reason: string; evidence: string | null; status: 'pending' | 'accepted' | 'rejected' | 'cancelled'; resolution: string | null;
+  resolvedBy: number | null; resolvedAt: string | null; createdAt: string; updatedAt: string;
+  answer?: { paperQuestionId: number; content: AnswerContent | null; finalScore: number | null; maxScore: number } | null;
+  auditLogs?: Array<{ id: number; actorUserId: number; action: string; before: Record<string, unknown> | null; after: Record<string, unknown> | null; reason: string; createdAt: string }>;
+}
+
 export interface TeacherAttemptGradingDetail {
   attempt: Attempt;
   student: Pick<User, 'id' | 'username' | 'email'>;
@@ -867,7 +877,7 @@ export interface StudentResultQuestion extends AttemptQuestionSnapshot {
 
 export interface StudentAttemptResult {
   attempt: Attempt;
-  exam: Pick<Exam, 'id' | 'title' | 'status' | 'showAnswers' | 'showAnalysis'>;
+  exam: Pick<Exam, 'id' | 'title' | 'status' | 'showAnswers' | 'showAnalysis' | 'gradeReviewEnabled' | 'gradeReviewDeadline'>;
   paper: AttemptPaperSnapshot['paper'];
   questions: StudentResultQuestion[];
 }

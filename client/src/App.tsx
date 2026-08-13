@@ -33,6 +33,8 @@ import TeacherKnowledgeAnalytics from './pages/TeacherKnowledgeAnalytics';
 import StudentPractice from './pages/StudentPractice';
 import StudentPracticeSession from './pages/StudentPracticeSession';
 import TeachingAnalytics from './pages/TeachingAnalytics';
+import StudentGradeReviews from './pages/StudentGradeReviews';
+import TeacherGradeReviews from './pages/TeacherGradeReviews';
 
 const teacherRoles = ['teacher', 'admin'] as const;
 
@@ -90,6 +92,7 @@ const App: React.FC = () => {
         <Route path="/exams/:id/results" element={<TeacherRoute><ExamResults /></TeacherRoute>} />
         <Route path="/exams/:id/attempts/:attemptId/grade" element={<TeacherRoute><AttemptGrading /></TeacherRoute>} />
         <Route path="/teacher/tasks" element={<TeacherRoute><TaskCenter /></TeacherRoute>} />
+        <Route path="/teacher/grade-reviews" element={<TeacherRoute><TeacherGradeReviews /></TeacherRoute>} />
         <Route path="/teacher/courses/:id/analytics/knowledge" element={<TeacherRoute><TeacherKnowledgeAnalytics /></TeacherRoute>} />
         <Route path="/teacher/courses/:id/analytics" element={<TeacherRoute><TeachingAnalytics /></TeacherRoute>} />
         <Route path="/student/exams" element={<StudentRoute><StudentExamList /></StudentRoute>} />
@@ -97,6 +100,7 @@ const App: React.FC = () => {
         <Route path="/student/learning" element={<StudentRoute><StudentLearning /></StudentRoute>} />
         <Route path="/student/practice" element={<StudentRoute><StudentPractice /></StudentRoute>} />
         <Route path="/student/practice/:id" element={<StudentRoute><StudentPracticeSession /></StudentRoute>} />
+        <Route path="/student/grade-reviews" element={<StudentRoute><StudentGradeReviews /></StudentRoute>} />
         <Route path="/attempts/:id" element={<StudentRoute><ExamTaking /></StudentRoute>} />
         <Route path="/attempts/:id/result" element={<StudentRoute><StudentResult /></StudentRoute>} />
       </Route>

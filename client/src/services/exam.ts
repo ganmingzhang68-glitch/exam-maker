@@ -23,6 +23,8 @@ export interface ExamInput {
   fillBlankIgnoreCase: boolean;
   showAnswers: boolean;
   showAnalysis: boolean;
+  gradeReviewEnabled: boolean;
+  gradeReviewDeadline?: string | null;
 }
 
 export async function listTeacherExams(): Promise<TeacherExamSummary[]> {

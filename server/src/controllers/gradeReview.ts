@@ -1,0 +1,7 @@
+import type { NextFunction, Response } from 'express'; import { z } from 'zod';
+import { createGradeReviewSchema, positiveIdSchema, resolveGradeReviewSchema } from '@exam-maker/shared'; import type { AuthRequest } from '../middleware/auth.js';
+import { createGradeReview, listStudentGradeReviews, listTeacherGradeReviews, resolveGradeReview } from '../services/gradeReview.js';
+export function create(req: AuthRequest, res: Response, next: NextFunction) { try { res.status(201).json({ success: true, data: createGradeReview(req.userId!, createGradeReviewSchema.parse(req.body)) }); } catch (error) { next(error); } }
+export function mine(req: AuthRequest, res: Response, next: NextFunction) { try { res.json({ success: true, data: listStudentGradeReviews(req.userId!) }); } catch (error) { next(error); } }
+export function teacherList(req: AuthRequest, res: Response, next: NextFunction) { try { const query = z.object({ examId: z.coerce.number().int().positive().optional() }).parse(req.query); res.json({ success: true, data: listTeacherGradeReviews(req.userId!, req.userRole as 'teacher' | 'admin', query.examId) }); } catch (error) { next(error); } }
+export function resolve(req: AuthRequest, res: Response, next: NextFunction) { try { res.json({ success: true, data: resolveGradeReview(req.userId!, req.userRole as 'teacher' | 'admin', positiveIdSchema.parse(req.params.id), resolveGradeReviewSchema.parse(req.body)) }); } catch (error) { next(error); } }

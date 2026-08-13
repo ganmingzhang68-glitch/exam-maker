@@ -221,6 +221,8 @@ export function getStudentAttemptResult(req: AuthRequest, res: Response, next: N
           status: exam.status,
           showAnswers: exam.showAnswers,
           showAnalysis: exam.showAnalysis,
+          gradeReviewEnabled: exam.gradeReviewEnabled,
+          gradeReviewDeadline: exam.gradeReviewDeadline,
         },
         paper: detail.paper,
         questions,

@@ -729,6 +729,8 @@ export const exams = sqliteTable('exams', {
   fillBlankIgnoreCase: integer('fill_blank_ignore_case', { mode: 'boolean' }).notNull().default(false),
   showAnswers: integer('show_answers', { mode: 'boolean' }).notNull().default(false),
   showAnalysis: integer('show_analysis', { mode: 'boolean' }).notNull().default(false),
+  gradeReviewEnabled: integer('grade_review_enabled', { mode: 'boolean' }).notNull().default(false),
+  gradeReviewDeadline: text('grade_review_deadline'),
   publishedAt: text('published_at'),
   createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
   updatedAt: text('updated_at').notNull().default(sql`(datetime('now'))`),
@@ -993,4 +995,36 @@ export const teachingAnalyticsSnapshots = sqliteTable('teaching_analytics_snapsh
   updatedAt: text('updated_at').notNull().default(sql`(datetime('now'))`),
 }, (table) => ({
   courseCreatedIdx: index('teaching_analytics_course_created_idx').on(table.courseId, table.createdAt),
+}));
+
+export const gradeReviews = sqliteTable('grade_reviews', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  examId: integer('exam_id').notNull().references(() => exams.id, { onDelete: 'cascade' }),
+  attemptId: integer('attempt_id').notNull().references(() => attempts.id, { onDelete: 'cascade' }),
+  answerId: integer('answer_id').references(() => answers.id, { onDelete: 'set null' }),
+  studentId: integer('student_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  reason: text('reason').notNull(),
+  evidence: text('evidence'),
+  status: text('status', { enum: ['pending', 'accepted', 'rejected', 'cancelled'] }).notNull().default('pending'),
+  resolution: text('resolution'),
+  resolvedBy: integer('resolved_by').references(() => users.id, { onDelete: 'set null' }),
+  resolvedAt: text('resolved_at'),
+  createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
+  updatedAt: text('updated_at').notNull().default(sql`(datetime('now'))`),
+}, (table) => ({
+  studentStatusIdx: index('grade_reviews_student_status_idx').on(table.studentId, table.status, table.createdAt),
+  examStatusIdx: index('grade_reviews_exam_status_idx').on(table.examId, table.status, table.createdAt),
+}));
+
+export const gradeAuditLogs = sqliteTable('grade_audit_logs', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  gradeReviewId: integer('grade_review_id').notNull().references(() => gradeReviews.id, { onDelete: 'cascade' }),
+  actorUserId: integer('actor_user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),
+  action: text('action').notNull(),
+  beforeJson: text('before_json'),
+  afterJson: text('after_json'),
+  reason: text('reason').notNull(),
+  createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
+}, (table) => ({
+  reviewIdx: index('grade_audit_logs_review_idx').on(table.gradeReviewId, table.createdAt),
 }));

@@ -252,9 +252,17 @@ export const createExamSchema = z.object({
   fillBlankIgnoreCase: z.boolean().default(false),
   showAnswers: z.boolean().default(false),
   showAnalysis: z.boolean().default(false),
+  gradeReviewEnabled: z.boolean().default(false),
+  gradeReviewDeadline: z.string().datetime({ offset: true }).nullable().optional(),
 }).superRefine((value, ctx) => {
   if (new Date(value.startAt).getTime() >= new Date(value.endAt).getTime()) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['endAt'], message: '结束时间必须晚于开始时间' });
+  }
+  if (value.gradeReviewEnabled && !value.gradeReviewDeadline) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['gradeReviewDeadline'], message: '启用成绩复核时必须设置截止时间' });
+  }
+  if (value.gradeReviewDeadline && new Date(value.gradeReviewDeadline).getTime() <= new Date(value.endAt).getTime()) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['gradeReviewDeadline'], message: '成绩复核截止时间必须晚于考试结束时间' });
   }
 });
 
@@ -268,6 +276,19 @@ export const updateExamSchema = z.object({
   fillBlankIgnoreCase: z.boolean().optional(),
   showAnswers: z.boolean().optional(),
   showAnalysis: z.boolean().optional(),
+  gradeReviewEnabled: z.boolean().optional(),
+  gradeReviewDeadline: z.string().datetime({ offset: true }).nullable().optional(),
+});
+
+export const createGradeReviewSchema = z.object({
+  attemptId: z.number().int().positive(), answerId: z.number().int().positive().nullable().optional(),
+  reason: z.string().trim().min(5, '复核理由至少 5 个字符').max(5000), evidence: z.string().trim().max(10000).nullable().optional(),
+}).strict();
+export const resolveGradeReviewSchema = z.object({
+  decision: z.enum(['accepted', 'rejected']), resolution: z.string().trim().min(2).max(5000),
+  adjustedScore: z.number().min(0).max(1000).nullable().optional(),
+}).strict().superRefine((value, ctx) => {
+  if (value.decision === 'rejected' && value.adjustedScore !== undefined && value.adjustedScore !== null) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['adjustedScore'], message: '驳回时不能修改分数' });
 });
 
 export const answerContentSchema = z.union([

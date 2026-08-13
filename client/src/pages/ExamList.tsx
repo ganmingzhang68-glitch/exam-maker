@@ -40,6 +40,8 @@ interface ExamFormValues {
   fillBlankIgnoreCase: boolean;
   showAnswers: boolean;
   showAnalysis: boolean;
+  gradeReviewEnabled: boolean;
+  gradeReviewDeadline?: string;
 }
 
 const statusLabels: Record<ExamStatus, string> = {
@@ -73,6 +75,7 @@ const ExamList: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<TeacherExamSummary | null>(null);
+  const gradeReviewEnabled = Form.useWatch('gradeReviewEnabled', form);
 
   const load = async () => {
     setLoading(true);
@@ -101,6 +104,8 @@ const ExamList: React.FC = () => {
       fillBlankIgnoreCase: false,
       showAnswers: false,
       showAnalysis: false,
+      gradeReviewEnabled: false,
+      gradeReviewDeadline: '',
     });
     setModalOpen(true);
   };
@@ -117,6 +122,8 @@ const ExamList: React.FC = () => {
       fillBlankIgnoreCase: exam.fillBlankIgnoreCase,
       showAnswers: exam.showAnswers,
       showAnalysis: exam.showAnalysis,
+      gradeReviewEnabled: exam.gradeReviewEnabled,
+      gradeReviewDeadline: toLocalInput(exam.gradeReviewDeadline),
     });
     setModalOpen(true);
   };
@@ -128,6 +135,7 @@ const ExamList: React.FC = () => {
         ...values,
         startAt: new Date(values.startAt).toISOString(),
         endAt: new Date(values.endAt).toISOString(),
+        gradeReviewDeadline: values.gradeReviewEnabled && values.gradeReviewDeadline ? new Date(values.gradeReviewDeadline).toISOString() : null,
       };
       if (editing) await updateExam(editing.id, payload);
       else await createExam(payload);
@@ -276,6 +284,12 @@ const ExamList: React.FC = () => {
           <Form.Item name="fillBlankIgnoreCase" valuePropName="checked">
             <Checkbox>填空题判分忽略英文字母大小写</Checkbox>
           </Form.Item>
+          <Form.Item name="gradeReviewEnabled" valuePropName="checked">
+            <Checkbox>允许学生在限定时间内申请成绩复核</Checkbox>
+          </Form.Item>
+          {gradeReviewEnabled && <Form.Item name="gradeReviewDeadline" label="复核申请截止时间" dependencies={['endAt']} rules={[{ required: true, message: '请选择复核截止时间' }]}>
+            <Input type="datetime-local" />
+          </Form.Item>}
           <Space direction="vertical" size={4} style={{ marginBottom: 16 }}>
             <Text strong>学生提交后可见内容</Text>
             <Form.Item name="showAnswers" valuePropName="checked" noStyle>

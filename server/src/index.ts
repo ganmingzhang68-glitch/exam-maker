@@ -28,6 +28,7 @@ import learningRoutes from './routes/learning.js';
 import { resumeAiGradingSuggestions } from './services/aiGrading.js';
 import practiceRoutes from './routes/practice.js';
 import teachingAnalyticsRoutes from './routes/teachingAnalytics.js';
+import gradeReviewRoutes from './routes/gradeReview.js';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -60,6 +61,7 @@ app.use('/api/tasks', taskRoutes);
 app.use('/api/learning', learningRoutes);
 app.use('/api/practice', practiceRoutes);
 app.use('/api/teaching-analytics', teachingAnalyticsRoutes);
+app.use('/api/grade-reviews', gradeReviewRoutes);
 
 // Error handler (must be last)
 app.use(errorHandler);

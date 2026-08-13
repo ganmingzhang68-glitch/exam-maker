@@ -37,6 +37,7 @@ const AppLayout: React.FC = () => {
       { key: '/student/exams', icon: <SolutionOutlined />, label: '我的考试' },
       { key: '/student/learning', icon: <ReadOutlined />, label: '知识点表现' },
       { key: '/student/practice', icon: <EditOutlined />, label: '自主练习' },
+      { key: '/student/grade-reviews', icon: <AuditOutlined />, label: '成绩复核' },
     ]
     : [
       { key: '/', icon: <DashboardOutlined />, label: '教师首页' },
@@ -50,6 +51,7 @@ const AppLayout: React.FC = () => {
       { key: '/papers', icon: <FileDoneOutlined />, label: '试卷管理' },
       { key: '/exams', icon: <CalendarOutlined />, label: '考试管理' },
       { key: '/teacher/tasks', icon: <ClockCircleOutlined />, label: '后台任务' },
+      { key: '/teacher/grade-reviews', icon: <AuditOutlined />, label: '成绩复核' },
     ];
 
   const selectedMenuKey = location.pathname.startsWith('/student/dashboard')
@@ -58,10 +60,14 @@ const AppLayout: React.FC = () => {
     ? '/student/learning'
     : location.pathname.startsWith('/student/practice')
     ? '/student/practice'
+    : location.pathname.startsWith('/student/grade-reviews')
+    ? '/student/grade-reviews'
     : location.pathname.startsWith('/student/exams') || location.pathname.startsWith('/attempts/')
     ? '/student/exams'
     : location.pathname.startsWith('/teacher/tasks')
     ? '/teacher/tasks'
+    : location.pathname.startsWith('/teacher/grade-reviews')
+    ? '/teacher/grade-reviews'
     : location.pathname.startsWith('/courses')
     ? '/courses'
     : location.pathname.startsWith('/classes')

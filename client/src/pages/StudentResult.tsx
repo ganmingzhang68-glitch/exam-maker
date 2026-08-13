@@ -38,6 +38,7 @@ const StudentResult: React.FC = () => {
   return (
     <div style={{ maxWidth: 960, margin: '0 auto' }}>
       <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/student/exams')} style={{ marginBottom: 16 }}>返回我的考试</Button>
+      {result.exam.gradeReviewEnabled && <Button style={{ marginLeft: 8, marginBottom: 16 }} onClick={() => navigate(`/student/grade-reviews?attemptId=${result.attempt.id}`)}>申请成绩复核</Button>}
       <Card style={{ marginBottom: 16 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 24 }}>
           <div>
