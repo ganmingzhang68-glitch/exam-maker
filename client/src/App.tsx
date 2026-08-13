@@ -30,6 +30,8 @@ import QuestionDetail from './pages/QuestionDetail';
 import TaskCenter from './pages/TaskCenter';
 import StudentLearning from './pages/StudentLearning';
 import TeacherKnowledgeAnalytics from './pages/TeacherKnowledgeAnalytics';
+import StudentPractice from './pages/StudentPractice';
+import StudentPracticeSession from './pages/StudentPracticeSession';
 
 const teacherRoles = ['teacher', 'admin'] as const;
 
@@ -91,6 +93,8 @@ const App: React.FC = () => {
         <Route path="/student/exams" element={<StudentRoute><StudentExamList /></StudentRoute>} />
         <Route path="/student/dashboard" element={<StudentRoute><StudentDashboard /></StudentRoute>} />
         <Route path="/student/learning" element={<StudentRoute><StudentLearning /></StudentRoute>} />
+        <Route path="/student/practice" element={<StudentRoute><StudentPractice /></StudentRoute>} />
+        <Route path="/student/practice/:id" element={<StudentRoute><StudentPracticeSession /></StudentRoute>} />
         <Route path="/attempts/:id" element={<StudentRoute><ExamTaking /></StudentRoute>} />
         <Route path="/attempts/:id/result" element={<StudentRoute><StudentResult /></StudentRoute>} />
       </Route>

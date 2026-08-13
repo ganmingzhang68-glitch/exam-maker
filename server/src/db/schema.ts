@@ -920,3 +920,61 @@ export const studentKnowledgeMastery = sqliteTable('student_knowledge_mastery', 
   studentCourseIdx: index('student_knowledge_mastery_student_course_idx').on(table.studentId, table.courseId, table.masteryLevel),
   coursePointIdx: index('student_knowledge_mastery_course_point_idx').on(table.courseId, table.knowledgePointId, table.masteryLevel),
 }));
+
+export const practiceSessions = sqliteTable('practice_sessions', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  studentId: integer('student_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  courseId: integer('course_id').notNull().references(() => courses.id, { onDelete: 'cascade' }),
+  mode: text('mode', { enum: ['wrong_questions', 'knowledge_point', 'weak_points'] }).notNull(),
+  knowledgePointId: integer('knowledge_point_id').references(() => knowledgePoints.id, { onDelete: 'set null' }),
+  requestedCount: integer('requested_count').notNull(),
+  selectedCount: integer('selected_count').notNull().default(0),
+  shortageCount: integer('shortage_count').notNull().default(0),
+  difficulty: text('difficulty', { enum: ['basic', 'medium', 'hard'] }),
+  status: text('status', { enum: ['planned', 'in_progress', 'completed', 'cancelled'] }).notNull().default('planned'),
+  scoreEarned: real('score_earned').notNull().default(0),
+  scorePossible: real('score_possible').notNull().default(0),
+  startedAt: text('started_at'),
+  completedAt: text('completed_at'),
+  createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
+  updatedAt: text('updated_at').notNull().default(sql`(datetime('now'))`),
+}, (table) => ({
+  studentStatusIdx: index('practice_sessions_student_status_idx').on(table.studentId, table.status, table.createdAt),
+  courseIdx: index('practice_sessions_course_idx').on(table.courseId, table.createdAt),
+}));
+
+export const practicePlans = sqliteTable('practice_plans', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  sessionId: integer('session_id').notNull().references(() => practiceSessions.id, { onDelete: 'cascade' }),
+  requestedDistribution: text('requested_distribution').notNull().default('{}'),
+  selectedDistribution: text('selected_distribution').notNull().default('{}'),
+  questionIds: text('question_ids').notNull().default('[]'),
+  shortages: text('shortages').notNull().default('[]'),
+  selectionVersion: text('selection_version').notNull().default('bank-objective-v1'),
+  createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
+  updatedAt: text('updated_at').notNull().default(sql`(datetime('now'))`),
+}, (table) => ({
+  sessionUnique: uniqueIndex('practice_plans_session_unique').on(table.sessionId),
+}));
+
+export const practiceAttempts = sqliteTable('practice_attempts', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  sessionId: integer('session_id').notNull().references(() => practiceSessions.id, { onDelete: 'cascade' }),
+  questionId: integer('question_id').notNull().references(() => questions.id, { onDelete: 'restrict' }),
+  orderNo: integer('order_no').notNull(),
+  questionSnapshot: text('question_snapshot').notNull(),
+  answerContent: text('answer_content'),
+  score: real('score'),
+  maxScore: real('max_score').notNull(),
+  isCorrect: integer('is_correct', { mode: 'boolean' }),
+  knowledgePointIds: text('knowledge_point_ids').notNull().default('[]'),
+  timeSpentSeconds: integer('time_spent_seconds'),
+  status: text('status', { enum: ['pending', 'answered', 'graded'] }).notNull().default('pending'),
+  answeredAt: text('answered_at'),
+  createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
+  updatedAt: text('updated_at').notNull().default(sql`(datetime('now'))`),
+}, (table) => ({
+  sessionOrderUnique: uniqueIndex('practice_attempts_session_order_unique').on(table.sessionId, table.orderNo),
+  sessionQuestionUnique: uniqueIndex('practice_attempts_session_question_unique').on(table.sessionId, table.questionId),
+  studentQuestionIdx: index('practice_attempts_question_idx').on(table.questionId, table.status),
+}));

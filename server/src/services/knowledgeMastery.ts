@@ -3,7 +3,7 @@ import type { MasteryLevel, StudentKnowledgeMastery, StudentLearningOverview, Te
 import { assessmentConfig } from '../config/assessment.js';
 import { db, saveToDisk, schema } from '../db/index.js';
 
-export const MASTERY_CALCULATION_VERSION = 'weighted-score-v1';
+export const MASTERY_CALCULATION_VERSION = 'weighted-score-exam-practice-v2';
 
 export interface MasteryEvidence {
   examId: number;
@@ -90,6 +90,18 @@ export function syncStudentCourseMastery(studentId: number, courseId: number): S
     for (const pointId of mapping.get(row.question.id) ?? []) {
       evidenceByPoint.set(pointId, [...(evidenceByPoint.get(pointId) ?? []), { examId: row.exam.id,
         earnedScore: row.answer.finalScore!, possibleScore: row.paperQuestion.score, assessedAt }]);
+    }
+  });
+  const practiceRows = db.select({ item: schema.practiceAttempts, session: schema.practiceSessions })
+    .from(schema.practiceAttempts).innerJoin(schema.practiceSessions, eq(schema.practiceAttempts.sessionId, schema.practiceSessions.id))
+    .where(and(eq(schema.practiceSessions.studentId, studentId), eq(schema.practiceSessions.courseId, courseId),
+      eq(schema.practiceAttempts.status, 'graded'), isNotNull(schema.practiceAttempts.score))).all();
+  practiceRows.forEach(({ item, session }) => {
+    const assessedAt = item.answeredAt ?? item.updatedAt;
+    for (const pointId of parseJson<number[]>(item.knowledgePointIds) ?? []) {
+      if (!points.some(point => point.id === pointId)) continue;
+      evidenceByPoint.set(pointId, [...(evidenceByPoint.get(pointId) ?? []), { examId: -session.id,
+        earnedScore: item.score!, possibleScore: item.maxScore, assessedAt }]);
     }
   });
   const now = new Date(); const updatedAt = now.toISOString();

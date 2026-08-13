@@ -26,6 +26,7 @@ import { requestIdMiddleware } from './middleware/requestId.js';
 import taskRoutes from './routes/task.js';
 import learningRoutes from './routes/learning.js';
 import { resumeAiGradingSuggestions } from './services/aiGrading.js';
+import practiceRoutes from './routes/practice.js';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -56,6 +57,7 @@ app.use('/api/classes', teachingClassRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/tasks', taskRoutes);
 app.use('/api/learning', learningRoutes);
+app.use('/api/practice', practiceRoutes);
 
 // Error handler (must be last)
 app.use(errorHandler);

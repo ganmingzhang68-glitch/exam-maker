@@ -286,3 +286,25 @@ export const manualGradeSchema = z.object({
   aiSuggestionId: z.number().int().positive().nullable().optional(),
   gradingMode: z.enum(['accept_ai', 'modify_ai', 'manual']).default('manual'),
 });
+
+// ============ Student practice ============
+export const practiceModeSchema = z.enum(['wrong_questions', 'knowledge_point', 'weak_points']);
+export const createPracticeSessionSchema = z.object({
+  courseId: z.number().int().positive(),
+  mode: practiceModeSchema,
+  knowledgePointId: z.number().int().positive().nullable().optional(),
+  questionCount: z.number().int().min(1).max(50).default(10),
+  difficulty: z.enum(['basic', 'medium', 'hard']).nullable().optional(),
+}).strict().superRefine((value, ctx) => {
+  if (value.mode === 'knowledge_point' && !value.knowledgePointId) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['knowledgePointId'], message: '按知识点练习时必须选择知识点' });
+  }
+  if (value.mode !== 'knowledge_point' && value.knowledgePointId) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['knowledgePointId'], message: '当前练习模式不能指定知识点' });
+  }
+});
+
+export const submitPracticeAnswerSchema = z.object({
+  content: answerContentSchema,
+  timeSpentSeconds: z.number().int().min(0).max(86400).nullable().optional(),
+}).strict();

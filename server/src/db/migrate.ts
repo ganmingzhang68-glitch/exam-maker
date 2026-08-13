@@ -19,6 +19,7 @@ import { difficultyCalibrationMigration } from './migrations/016_difficulty_cali
 import { aiGradingSuggestionsMigration } from './migrations/017_ai_grading_suggestions.js';
 import { gradingCalibrationMigration } from './migrations/018_grading_calibration.js';
 import { studentKnowledgeMasteryMigration } from './migrations/019_student_knowledge_mastery.js';
+import { practiceSessionsMigration } from './migrations/020_practice_sessions.js';
 
 interface Migration {
   id: string;
@@ -45,6 +46,7 @@ const migrations: Migration[] = [
   aiGradingSuggestionsMigration,
   gradingCalibrationMigration,
   studentKnowledgeMasteryMigration,
+  practiceSessionsMigration,
 ];
 
 export function runMigrations(database: Database = rawDb): void {

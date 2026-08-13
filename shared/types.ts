@@ -761,6 +761,66 @@ export interface TeacherCourseKnowledgeAnalytics {
   items: TeacherKnowledgeAnalyticsItem[];
 }
 
+export type PracticeMode = 'wrong_questions' | 'knowledge_point' | 'weak_points';
+export type PracticeSessionStatus = 'planned' | 'in_progress' | 'completed' | 'cancelled';
+
+export interface PracticePlan {
+  id: number;
+  sessionId: number;
+  requestedDistribution: Record<string, unknown>;
+  selectedDistribution: Record<string, unknown>;
+  questionIds: number[];
+  shortages: Array<{ code: string; message: string; missingCount: number }>;
+  selectionVersion: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PracticeQuestion {
+  id: number;
+  questionId: number;
+  orderNo: number;
+  stem: string;
+  type: QuestionType;
+  options: string[] | null;
+  difficulty: DifficultyLevel | null;
+  maxScore: number;
+  knowledgePointIds: number[];
+  knowledgePointNames: string[];
+  answerContent: AnswerContent | null;
+  score: number | null;
+  isCorrect: boolean | null;
+  status: 'pending' | 'answered' | 'graded';
+  analysis?: string | null;
+  answerKey?: Record<string, unknown> | null;
+}
+
+export interface PracticeSession {
+  id: number;
+  studentId: number;
+  courseId: number;
+  courseName: string;
+  mode: PracticeMode;
+  knowledgePointId: number | null;
+  requestedCount: number;
+  selectedCount: number;
+  shortageCount: number;
+  difficulty: DifficultyLevel | null;
+  status: PracticeSessionStatus;
+  scoreEarned: number;
+  scorePossible: number;
+  startedAt: string | null;
+  completedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  plan?: PracticePlan;
+  questions?: PracticeQuestion[];
+}
+
+export interface PracticeOptions {
+  courses: Array<{ id: number; name: string; knowledgePoints: Array<{ id: number; name: string; parentId: number | null; masteryLevel: MasteryLevel | null }> }>;
+}
+
 export interface TeacherAttemptGradingDetail {
   attempt: Attempt;
   student: Pick<User, 'id' | 'username' | 'email'>;
