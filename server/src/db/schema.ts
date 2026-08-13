@@ -978,3 +978,19 @@ export const practiceAttempts = sqliteTable('practice_attempts', {
   sessionQuestionUnique: uniqueIndex('practice_attempts_session_question_unique').on(table.sessionId, table.questionId),
   studentQuestionIdx: index('practice_attempts_question_idx').on(table.questionId, table.status),
 }));
+
+export const teachingAnalyticsSnapshots = sqliteTable('teaching_analytics_snapshots', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  courseId: integer('course_id').notNull().references(() => courses.id, { onDelete: 'cascade' }),
+  generatedBy: integer('generated_by').notNull().references(() => users.id, { onDelete: 'restrict' }),
+  status: text('status', { enum: ['ready', 'stale', 'failed'] }).notNull().default('ready'),
+  calculationVersion: text('calculation_version').notNull(),
+  inputCutoffAt: text('input_cutoff_at').notNull(),
+  summaryJson: text('summary_json').notNull(),
+  attentionJson: text('attention_json').notNull().default('[]'),
+  errorMessage: text('error_message'),
+  createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
+  updatedAt: text('updated_at').notNull().default(sql`(datetime('now'))`),
+}, (table) => ({
+  courseCreatedIdx: index('teaching_analytics_course_created_idx').on(table.courseId, table.createdAt),
+}));

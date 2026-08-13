@@ -821,6 +821,36 @@ export interface PracticeOptions {
   courses: Array<{ id: number; name: string; knowledgePoints: Array<{ id: number; name: string; parentId: number | null; masteryLevel: MasteryLevel | null }> }>;
 }
 
+export interface TeachingAttentionStudent {
+  studentId: number;
+  username: string;
+  reasons: Array<'missed_submission' | 'score_decline' | 'persistent_weakness'>;
+  evidence: { assignedExamCount: number; completedExamCount: number; latestScoreRate: number | null; previousScoreRate: number | null; weakKnowledgePointCount: number };
+}
+
+export interface TeachingAnalytics {
+  id: number;
+  courseId: number;
+  courseName: string;
+  generatedAt: string;
+  calculationVersion: string;
+  summary: {
+    enrolledStudentCount: number;
+    publishedExamCount: number;
+    assignmentCount: number;
+    gradedAttemptCount: number;
+    participationRate: number | null;
+    averageScoreRate: number | null;
+    completedPracticeCount: number;
+    averagePracticeScoreRate: number | null;
+    lowQualityQuestionCount: number;
+    pendingQuestionReviewCount: number;
+    weakKnowledgePoints: Array<{ knowledgePointId: number; name: string; averageScoreRate: number | null; weakStudentCount: number }>;
+  };
+  attentionStudents: TeachingAttentionStudent[];
+  rules: string[];
+}
+
 export interface TeacherAttemptGradingDetail {
   attempt: Attempt;
   student: Pick<User, 'id' | 'username' | 'email'>;
