@@ -109,6 +109,7 @@ const CourseDetail: React.FC = () => {
           { key: 'papers', label: '试卷', children: placeholder('课程试卷', <Button onClick={() => navigate('/papers')}>进入试卷库</Button>) },
           { key: 'exams', label: '考试', children: placeholder('课程考试', <Button onClick={() => navigate('/exams')}>进入考试管理</Button>) },
           { key: 'grades', label: '成绩', children: placeholder('课程成绩') },
+          { key: 'knowledge', label: '知识点分析', children: placeholder('班级知识点分析', <Button onClick={() => navigate(`/teacher/courses/${course.id}/analytics/knowledge`)}>查看班级知识点分析</Button>) },
           { key: 'ai', label: 'AI 命题', children: placeholder('AI 命题', <Button type="primary" onClick={() => navigate('/projects/new')}>创建出卷项目</Button>) },
           { key: 'difficulty', label: 'AI 难度校准', children: calibrationView },
           { key: 'grading-calibration', label: 'AI 批改校准', children: gradingCalibrationView },

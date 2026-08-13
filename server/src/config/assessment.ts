@@ -17,4 +17,10 @@ export const assessmentConfig = Object.freeze({
   calibrationTolerance: numberEnv('ASSESSMENT_CALIBRATION_TOLERANCE', 0.1, 0, 1),
   minimumCalibrationRecords: numberEnv('ASSESSMENT_MIN_CALIBRATION_RECORDS', 10, 2, 1000),
   minimumGradingCalibrationRecords: numberEnv('ASSESSMENT_MIN_GRADING_CALIBRATION_RECORDS', 5, 2, 1000),
+  masteryMinimumQuestions: numberEnv('MASTERY_MIN_QUESTIONS', 3, 1, 100),
+  masteryHalfLifeDays: numberEnv('MASTERY_HALF_LIFE_DAYS', 90, 1, 3650),
+  masteryRecentDays: numberEnv('MASTERY_RECENT_DAYS', 30, 1, 365),
+  masteryMasteredRate: numberEnv('MASTERY_MASTERED_RATE', 0.85, 0, 1),
+  masteryGoodRate: numberEnv('MASTERY_GOOD_RATE', 0.7, 0, 1),
+  masteryDevelopingRate: numberEnv('MASTERY_DEVELOPING_RATE', 0.5, 0, 1),
 });

@@ -898,3 +898,25 @@ export const gradingCalibrations = sqliteTable('grading_calibrations', {
 }, (table) => ({
   courseUnique: uniqueIndex('grading_calibrations_course_unique').on(table.courseId),
 }));
+
+export const studentKnowledgeMastery = sqliteTable('student_knowledge_mastery', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  studentId: integer('student_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  courseId: integer('course_id').notNull().references(() => courses.id, { onDelete: 'cascade' }),
+  knowledgePointId: integer('knowledge_point_id').notNull().references(() => knowledgePoints.id, { onDelete: 'cascade' }),
+  scoreRate: real('score_rate'),
+  recentScoreRate: real('recent_score_rate'),
+  weightedScoreEarned: real('weighted_score_earned').notNull().default(0),
+  weightedScorePossible: real('weighted_score_possible').notNull().default(0),
+  questionCount: integer('question_count').notNull().default(0),
+  assessmentCount: integer('assessment_count').notNull().default(0),
+  masteryLevel: text('mastery_level', { enum: ['mastered', 'good', 'developing', 'weak', 'insufficient_data'] }).notNull().default('insufficient_data'),
+  lastAssessedAt: text('last_assessed_at'),
+  calculationVersion: text('calculation_version').notNull(),
+  createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
+  updatedAt: text('updated_at').notNull().default(sql`(datetime('now'))`),
+}, (table) => ({
+  studentPointUnique: uniqueIndex('student_knowledge_mastery_student_point_unique').on(table.studentId, table.courseId, table.knowledgePointId),
+  studentCourseIdx: index('student_knowledge_mastery_student_course_idx').on(table.studentId, table.courseId, table.masteryLevel),
+  coursePointIdx: index('student_knowledge_mastery_course_point_idx').on(table.courseId, table.knowledgePointId, table.masteryLevel),
+}));

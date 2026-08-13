@@ -23,6 +23,7 @@ test('foundation migration preserves old users and projects', async () => {
   assert.ok(tables.has('course_difficulty_calibrations'));
   assert.ok(tables.has('ai_grading_suggestions'));
   assert.ok(tables.has('grading_calibrations'));
+  assert.ok(tables.has('student_knowledge_mastery'));
   const questionColumns = new Set(database.exec('PRAGMA table_info(questions)')[0].values.map(row => String(row[1])));
   assert.ok(questionColumns.has('predicted_difficulty_score'));
   assert.ok(questionColumns.has('teacher_difficulty_score'));

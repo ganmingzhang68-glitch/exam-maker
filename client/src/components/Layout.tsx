@@ -34,6 +34,7 @@ const AppLayout: React.FC = () => {
     ? [
       { key: '/student/dashboard', icon: <DashboardOutlined />, label: '学习首页' },
       { key: '/student/exams', icon: <SolutionOutlined />, label: '我的考试' },
+      { key: '/student/learning', icon: <ReadOutlined />, label: '知识点表现' },
     ]
     : [
       { key: '/', icon: <DashboardOutlined />, label: '教师首页' },
@@ -51,6 +52,8 @@ const AppLayout: React.FC = () => {
 
   const selectedMenuKey = location.pathname.startsWith('/student/dashboard')
     ? '/student/dashboard'
+    : location.pathname.startsWith('/student/learning')
+    ? '/student/learning'
     : location.pathname.startsWith('/student/exams') || location.pathname.startsWith('/attempts/')
     ? '/student/exams'
     : location.pathname.startsWith('/teacher/tasks')

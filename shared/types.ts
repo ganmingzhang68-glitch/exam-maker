@@ -719,6 +719,48 @@ export interface CourseGradingCalibration extends GradingCalibrationMetric {
   byRubric: GradingCalibrationMetric[];
 }
 
+export type MasteryLevel = 'mastered' | 'good' | 'developing' | 'weak' | 'insufficient_data';
+export interface StudentKnowledgeMastery {
+  id: number;
+  studentId: number;
+  courseId: number;
+  courseName: string;
+  knowledgePointId: number;
+  knowledgePointName: string;
+  parentKnowledgePointId: number | null;
+  scoreRate: number | null;
+  recentScoreRate: number | null;
+  questionCount: number;
+  assessmentCount: number;
+  masteryLevel: MasteryLevel;
+  lastAssessedAt: string | null;
+  timeSpentSeconds: null;
+  calculationVersion: string;
+}
+
+export interface StudentLearningOverview {
+  configuration: { minimumQuestions: number; halfLifeDays: number; recentDays: number };
+  courses: Array<{ courseId: number; courseName: string; knowledgePoints: StudentKnowledgeMastery[] }>;
+}
+
+export interface TeacherKnowledgeAnalyticsItem {
+  knowledgePointId: number;
+  knowledgePointName: string;
+  parentKnowledgePointId: number | null;
+  averageScoreRate: number | null;
+  studentCount: number;
+  weakStudentCount: number;
+  questionCount: number;
+  status: 'available' | 'insufficient_data';
+}
+
+export interface TeacherCourseKnowledgeAnalytics {
+  courseId: number;
+  courseName: string;
+  enrolledStudentCount: number;
+  items: TeacherKnowledgeAnalyticsItem[];
+}
+
 export interface TeacherAttemptGradingDetail {
   attempt: Attempt;
   student: Pick<User, 'id' | 'username' | 'email'>;

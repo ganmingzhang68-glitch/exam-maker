@@ -24,6 +24,7 @@ import dashboardRoutes from './routes/dashboard.js';
 import { resumeSimilarQuestionJobs } from './services/similarQuestionPipeline.js';
 import { requestIdMiddleware } from './middleware/requestId.js';
 import taskRoutes from './routes/task.js';
+import learningRoutes from './routes/learning.js';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -53,6 +54,7 @@ app.use('/api/courses', courseRoutes);
 app.use('/api/classes', teachingClassRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/tasks', taskRoutes);
+app.use('/api/learning', learningRoutes);
 
 // Error handler (must be last)
 app.use(errorHandler);

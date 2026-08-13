@@ -18,6 +18,7 @@ import { questionQualityReportsMigration } from './migrations/015_question_quali
 import { difficultyCalibrationMigration } from './migrations/016_difficulty_calibration.js';
 import { aiGradingSuggestionsMigration } from './migrations/017_ai_grading_suggestions.js';
 import { gradingCalibrationMigration } from './migrations/018_grading_calibration.js';
+import { studentKnowledgeMasteryMigration } from './migrations/019_student_knowledge_mastery.js';
 
 interface Migration {
   id: string;
@@ -43,6 +44,7 @@ const migrations: Migration[] = [
   difficultyCalibrationMigration,
   aiGradingSuggestionsMigration,
   gradingCalibrationMigration,
+  studentKnowledgeMasteryMigration,
 ];
 
 export function runMigrations(database: Database = rawDb): void {
