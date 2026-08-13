@@ -574,6 +574,56 @@ export interface TeacherExamStudentResult {
   attempts: Attempt[];
 }
 
+export type AssessmentMetricStatus = 'ok' | 'insufficient_sample' | 'not_applicable';
+export interface AssessmentItemMetric {
+  paperQuestionId: number;
+  questionId: number;
+  orderNo: number;
+  stem: string;
+  type: QuestionType;
+  maxScore: number;
+  sampleSize: number;
+  status: AssessmentMetricStatus;
+  correctRate: number | null;
+  empiricalDifficulty: number | null;
+  highGroupCorrectRate: number | null;
+  lowGroupCorrectRate: number | null;
+  discriminationIndex: number | null;
+  pointBiserialCorrelation: number | null;
+  averageScoreRate: number | null;
+  flags: string[];
+}
+
+export interface ExamAssessment {
+  examId: number;
+  paperTitle: string;
+  sampleSize: number;
+  sampleStatus: 'ok' | 'insufficient_sample';
+  configuration: {
+    minimumSampleSize: number;
+    highLowGroupProportion: number;
+    passingScoreRate: number;
+    tooEasyCorrectRate: number;
+    tooHardCorrectRate: number;
+    lowDiscrimination: number;
+    negativeDiscrimination: number;
+  };
+  summary: {
+    participantCount: number;
+    meanScore: number | null;
+    standardDeviation: number | null;
+    medianScore: number | null;
+    passingRate: number | null;
+    totalScore: number;
+    cronbachAlpha: number | null;
+    reliabilityStatus: AssessmentMetricStatus;
+    averageCorrectRate: number | null;
+    averageEmpiricalDifficulty: number | null;
+    averageDiscrimination: number | null;
+  };
+  items: AssessmentItemMetric[];
+}
+
 export interface GradingQuestionDetail extends AttemptQuestionSnapshot {
   answer: Answer;
   answerKey: Record<string, unknown> | null;

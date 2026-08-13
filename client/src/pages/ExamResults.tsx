@@ -1,10 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Button, Space, Table, Tag, Typography, message } from 'antd';
+import { Alert, Button, Card, Col, Row, Space, Statistic, Table, Tag, Typography, message } from 'antd';
 import type { TableColumnsType } from 'antd';
 import { ArrowLeftOutlined, FormOutlined, ReloadOutlined } from '@ant-design/icons';
-import type { Attempt, TeacherExamStudentResult } from '@exam-maker/shared';
-import { listExamResults, listTeacherExams } from '../services/exam';
+import type { AssessmentItemMetric, Attempt, ExamAssessment, TeacherExamStudentResult } from '@exam-maker/shared';
+import { getExamAssessment, listExamResults, listTeacherExams } from '../services/exam';
 
 const { Title, Text } = Typography;
 
@@ -24,13 +24,15 @@ const ExamResults: React.FC = () => {
   const navigate = useNavigate();
   const [title, setTitle] = useState('考试成绩');
   const [students, setStudents] = useState<TeacherExamStudentResult[]>([]);
+  const [assessment, setAssessment] = useState<ExamAssessment | null>(null);
   const [loading, setLoading] = useState(false);
 
   const load = async () => {
     setLoading(true);
     try {
-      const [rows, exams] = await Promise.all([listExamResults(examId), listTeacherExams()]);
+      const [rows, exams, quality] = await Promise.all([listExamResults(examId), listTeacherExams(), getExamAssessment(examId)]);
       setStudents(rows);
+      setAssessment(quality);
       setTitle(exams.find((exam) => exam.id === examId)?.title ?? '考试成绩');
     } catch (error) {
       message.error(errorMessage(error, '加载成绩失败'));
@@ -75,6 +77,22 @@ const ExamResults: React.FC = () => {
     },
   ];
 
+  const percent = (value: number | null) => value === null ? '—' : `${(value * 100).toFixed(1)}%`;
+  const metric = (value: number | null, digits = 2) => value === null ? '—' : value.toFixed(digits);
+  const needsAttention = assessment?.items.filter(item => item.flags.some(flag => flag !== 'INSUFFICIENT_SAMPLE')) ?? [];
+  const qualityColumns: TableColumnsType<AssessmentItemMetric> = [
+    { title: '题目', dataIndex: 'orderNo', width: 70, render: (value: number) => `Q${value}` },
+    { title: '题干', dataIndex: 'stem', ellipsis: true },
+    { title: '样本', dataIndex: 'sampleSize', width: 70 },
+    { title: '正确率', dataIndex: 'correctRate', width: 100, render: percent },
+    { title: '经验难度', dataIndex: 'empiricalDifficulty', width: 100, render: percent },
+    { title: '区分度', dataIndex: 'discriminationIndex', width: 90, render: (value: number | null) => metric(value) },
+    { title: '点二列', dataIndex: 'pointBiserialCorrelation', width: 90, render: (value: number | null) => metric(value) },
+    { title: '提示', dataIndex: 'flags', width: 180, render: (flags: string[], row) => row.status === 'insufficient_sample'
+      ? <Tag>样本不足，仅供参考</Tag>
+      : flags.length ? flags.map(flag => <Tag key={flag} color="warning">{flag}</Tag>) : <Tag color="success">暂无统计异常</Tag> },
+  ];
+
   return (
     <div>
       <Space style={{ marginBottom: 16 }}>
@@ -83,6 +101,29 @@ const ExamResults: React.FC = () => {
       </Space>
       <Title level={4} style={{ marginBottom: 4 }}>{title}</Title>
       <Text type="secondary" style={{ display: 'block', marginBottom: 20 }}>查看学生提交状态、自动判分结果和人工批改进度。</Text>
+      <Title level={4}>考试质量</Title>
+      {assessment?.sampleStatus === 'insufficient_sample' && <Alert type="warning" showIcon
+        message="样本不足，仅供参考" description={`当前只有 ${assessment.sampleSize} 个有效学生样本，至少需要 ${assessment.configuration.minimumSampleSize} 个才报告区分度、点二列相关和信度。`} style={{ marginBottom: 16 }} />}
+      <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
+        <Col xs={12} md={6}><Card><Statistic title="参与人数" value={assessment?.summary.participantCount ?? 0} /></Card></Col>
+        <Col xs={12} md={6}><Card><Statistic title="平均分" value={assessment?.summary.meanScore ?? '—'} suffix={assessment ? `/ ${assessment.summary.totalScore}` : undefined} /></Card></Col>
+        <Col xs={12} md={6}><Card><Statistic title="标准差" value={assessment?.summary.standardDeviation ?? '—'} /></Card></Col>
+        <Col xs={12} md={6}><Card><Statistic title="中位数" value={assessment?.summary.medianScore ?? '—'} /></Card></Col>
+        <Col xs={12} md={6}><Card><Statistic title="及格率" value={percent(assessment?.summary.passingRate ?? null)} /></Card></Col>
+        <Col xs={12} md={6}><Card><Statistic title="Cronbach α" value={metric(assessment?.summary.cronbachAlpha ?? null, 3)} /></Card></Col>
+        <Col xs={12} md={6}><Card><Statistic title="平均经验难度" value={percent(assessment?.summary.averageEmpiricalDifficulty ?? null)} /></Card></Col>
+        <Col xs={12} md={6}><Card><Statistic title="平均区分度" value={metric(assessment?.summary.averageDiscrimination ?? null)} /></Card></Col>
+      </Row>
+      <Card title="需要教师关注" style={{ marginBottom: 16 }}>
+        {assessment?.sampleStatus === 'insufficient_sample'
+          ? <Text type="secondary">样本达到最低要求后才生成确定性的关注提示。</Text>
+          : needsAttention.length === 0 ? <Text type="secondary">当前没有题目触发统计阈值；仍建议结合教学目标人工复核。</Text>
+            : <Space direction="vertical">{needsAttention.map(item => <Alert key={item.paperQuestionId} type="warning" showIcon
+              message={`Q${item.orderNo}：建议教师复核`} description={`正确率 ${percent(item.correctRate)}，区分度 ${metric(item.discriminationIndex)}；标记：${item.flags.join('、')}`} />)}</Space>}
+      </Card>
+      <Table<AssessmentItemMetric> rowKey="paperQuestionId" size="small" loading={loading} columns={qualityColumns}
+        dataSource={assessment?.items ?? []} pagination={false} scroll={{ x: 950 }} style={{ marginBottom: 24 }} />
+      <Title level={4}>学生成绩</Title>
       <Table<ResultRow>
         rowKey="key"
         loading={loading}

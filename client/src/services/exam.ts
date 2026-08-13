@@ -8,6 +8,7 @@ import type {
   TeacherAttemptGradingDetail,
   TeacherExamSummary,
   TeacherExamStudentResult,
+  ExamAssessment,
 } from '@exam-maker/shared';
 import api from './api';
 
@@ -83,6 +84,11 @@ export async function submitAttempt(id: number): Promise<AttemptDetail & { idemp
 export async function listExamResults(examId: number): Promise<TeacherExamStudentResult[]> {
   const response = await api.get<ApiResponse<TeacherExamStudentResult[]>>(`/exams/${examId}/results`);
   return response.data.data ?? [];
+}
+
+export async function getExamAssessment(examId: number): Promise<ExamAssessment> {
+  const response = await api.get<ApiResponse<ExamAssessment>>(`/exams/${examId}/quality`);
+  return response.data.data!;
 }
 
 export async function getTeacherAttemptResult(

@@ -16,6 +16,7 @@ import {
   gradeSubjectiveAnswer,
   listExamResults,
 } from '../controllers/result.js';
+import { getExamAssessment } from '../controllers/assessment.js';
 
 const router = Router();
 
@@ -26,6 +27,7 @@ router.get('/:id/questions', requireAuth, requireRole('student'), getStudentExam
 router.get('/', requireAuth, requireRole('teacher', 'admin'), listTeacherExams);
 router.post('/', requireAuth, requireRole('teacher', 'admin'), createExam);
 router.get('/:id/results', requireAuth, requireRole('teacher', 'admin'), listExamResults);
+router.get('/:id/quality', requireAuth, requireRole('teacher', 'admin'), getExamAssessment);
 router.get('/:id/attempts/:attemptId', requireAuth, requireRole('teacher', 'admin'), getTeacherAttemptResult);
 router.patch(
   '/:id/attempts/:attemptId/answers/:answerId/grade',
