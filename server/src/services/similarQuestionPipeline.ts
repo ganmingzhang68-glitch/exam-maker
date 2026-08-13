@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, ne } from 'drizzle-orm';
 import type { z } from 'zod';
 import { db, saveToDisk, schema } from '../db/index.js';
 import { getConfig, isConfigured } from './ai.js';
@@ -38,6 +38,7 @@ interface AnsweredDraft extends GeneratedDraft {
 }
 
 const activeJobs = new Set<number>();
+class JobCancelledError extends Error {}
 const variationAxes = [
   '正向设问改为逆向推断', '改变任务类型（计算、解释、判断或设计）', '改变信息表征方式',
   '具体实例与抽象条件互换', '加入或移除参数讨论', '与相邻考点综合', '更换真实情境或材料', '改变提问粒度并形成递进小问',
@@ -58,7 +59,7 @@ function beginStage(jobId: number, stage: string, input: unknown) {
     jobId, stage, attemptNo: (last?.attemptNo ?? 0) + 1, inputJson: JSON.stringify(input),
     status: 'running', startedAt: now, updatedAt: now,
   }).returning().get();
-  db.update(schema.similarQuestionJobs).set({ status: 'running', currentStage: stage, errorSummary: null, updatedAt: now })
+  db.update(schema.similarQuestionJobs).set({ status: 'running', taskStatus: 'running', currentStage: stage, errorSummary: null, updatedAt: now })
     .where(eq(schema.similarQuestionJobs.id, jobId)).run();
   saveToDisk();
   return run;
@@ -98,6 +99,9 @@ function cachedStage<T>(jobId: number, stage: string): T | null {
 }
 
 async function executeStage<T>(jobId: number, stage: string, input: unknown, work: () => Promise<T>): Promise<T> {
+  const state = db.select({ taskStatus: schema.similarQuestionJobs.taskStatus }).from(schema.similarQuestionJobs)
+    .where(eq(schema.similarQuestionJobs.id, jobId)).get();
+  if (state?.taskStatus === 'cancelled') throw new JobCancelledError('任务已由用户取消');
   const cached = cachedStage<T>(jobId, stage);
   if (cached !== null) return cached;
   const run = beginStage(jobId, stage, input);
@@ -305,7 +309,8 @@ export async function runSimilarQuestionJob(jobId: number): Promise<void> {
   const job = db.select().from(schema.similarQuestionJobs).where(eq(schema.similarQuestionJobs.id, jobId)).get();
   if (!job || job.status === 'saved') return;
   if (!isConfigured()) {
-    db.update(schema.similarQuestionJobs).set({ status: 'failed', errorSummary: 'AI 未配置，请设置 AI_API_KEY', updatedAt: new Date().toISOString() }).where(eq(schema.similarQuestionJobs.id, jobId)).run();
+    const now = new Date().toISOString();
+    db.update(schema.similarQuestionJobs).set({ status: 'failed', taskStatus: 'failed', errorSummary: 'AI 未配置，请设置 AI_API_KEY', finishedAt: now, updatedAt: now }).where(eq(schema.similarQuestionJobs.id, jobId)).run();
     saveToDisk();
     return;
   }
@@ -318,12 +323,21 @@ export async function runSimilarQuestionJob(jobId: number): Promise<void> {
     const answered = await executeStage(jobId, 'answer_and_rubric_generation', { generatedCount: drafts.length }, () => answerDrafts(job, drafts));
     const validated = await executeStage(jobId, 'independent_validation', { generatedCount: answered.length }, () => validateDrafts(job, answered));
     const result = { sourceQuestions: parsed.questions, items: validated.items };
-    db.update(schema.similarQuestionJobs).set({ status: 'succeeded', currentStage: null, lastSuccessfulStage: 'independent_validation', errorSummary: null, resultJson: JSON.stringify(result), updatedAt: new Date().toISOString() })
+    const now = new Date().toISOString();
+    db.update(schema.similarQuestionJobs).set({ status: 'succeeded', taskStatus: 'succeeded', currentStage: null, lastSuccessfulStage: 'independent_validation', errorSummary: null, resultJson: JSON.stringify(result), finishedAt: now, updatedAt: now })
       .where(eq(schema.similarQuestionJobs.id, jobId)).run();
     saveToDisk();
   } catch (error) {
+    if (error instanceof JobCancelledError) {
+      const now = new Date().toISOString();
+      db.update(schema.similarQuestionJobs).set({ taskStatus: 'cancelled', currentStage: null, finishedAt: now, updatedAt: now })
+        .where(eq(schema.similarQuestionJobs.id, jobId)).run();
+      saveToDisk();
+      return;
+    }
     const message = error instanceof Error ? error.message : String(error);
-    db.update(schema.similarQuestionJobs).set({ status: 'failed', errorSummary: message, updatedAt: new Date().toISOString() })
+    const now = new Date().toISOString();
+    db.update(schema.similarQuestionJobs).set({ status: 'failed', taskStatus: 'failed', errorSummary: message, finishedAt: now, updatedAt: now })
       .where(eq(schema.similarQuestionJobs.id, jobId)).run();
     saveToDisk();
   } finally {
@@ -332,10 +346,18 @@ export async function runSimilarQuestionJob(jobId: number): Promise<void> {
 }
 
 export function retrySimilarQuestionJob(jobId: number): void {
-  db.update(schema.similarQuestionJobs).set({ status: 'pending', errorSummary: null, updatedAt: new Date().toISOString() })
+  db.update(schema.similarQuestionJobs).set({ status: 'pending', taskStatus: 'retrying', errorSummary: null,
+    cancelRequestedAt: null, finishedAt: null, updatedAt: new Date().toISOString() })
     .where(eq(schema.similarQuestionJobs.id, jobId)).run();
   saveToDisk();
   setTimeout(() => { void runSimilarQuestionJob(jobId); }, 0);
+}
+
+export function cancelSimilarQuestionJob(jobId: number): void {
+  const now = new Date().toISOString();
+  db.update(schema.similarQuestionJobs).set({ taskStatus: 'cancelled', cancelRequestedAt: now,
+    finishedAt: now, updatedAt: now }).where(eq(schema.similarQuestionJobs.id, jobId)).run();
+  saveToDisk();
 }
 
 export function resumeSimilarQuestionJobs(): void {
@@ -346,7 +368,8 @@ export function resumeSimilarQuestionJobs(): void {
     finishedAt: now, updatedAt: now,
   }).where(eq(schema.similarQuestionJobStages.status, 'running')).run();
   const jobs = db.select({ id: schema.similarQuestionJobs.id }).from(schema.similarQuestionJobs)
-    .where(inArray(schema.similarQuestionJobs.status, ['pending', 'running'])).orderBy(asc(schema.similarQuestionJobs.id)).all();
+    .where(and(inArray(schema.similarQuestionJobs.status, ['pending', 'running']), ne(schema.similarQuestionJobs.taskStatus, 'cancelled')))
+    .orderBy(asc(schema.similarQuestionJobs.id)).all();
   if (jobs.length > 0) saveToDisk();
   for (const job of jobs) setTimeout(() => { void runSimilarQuestionJob(job.id); }, 0);
 }

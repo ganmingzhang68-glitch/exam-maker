@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   Alert, Button, Card, Checkbox, Col, Descriptions, Empty, Form, Input, InputNumber,
   Progress, Radio, Row, Select, Space, Spin, Steps, Tag, Typography, Upload, message,
@@ -114,6 +115,7 @@ const ResultCard: React.FC<{
 );
 
 const SimilarQuestionGenerator: React.FC = () => {
+  const [searchParams] = useSearchParams();
   const [form] = Form.useForm<FormValues>();
   const [job, setJob] = useState<SimilarQuestionJob | null>(null);
   const [history, setHistory] = useState<SimilarQuestionJob[]>([]);
@@ -140,11 +142,14 @@ const SimilarQuestionGenerator: React.FC = () => {
 
   useEffect(() => {
     void refreshHistory();
-    const remembered = Number(localStorage.getItem('lastSimilarQuestionJobId'));
+    const requestedJobId = Number(searchParams.get('jobId'));
+    const remembered = Number.isInteger(requestedJobId) && requestedJobId > 0
+      ? requestedJobId
+      : Number(localStorage.getItem('lastSimilarQuestionJobId'));
     if (Number.isInteger(remembered) && remembered > 0) {
       loadJob(remembered).catch(() => localStorage.removeItem('lastSimilarQuestionJobId'));
     }
-  }, [loadJob, refreshHistory]);
+  }, [loadJob, refreshHistory, searchParams]);
 
   useEffect(() => {
     if (!job || (job.status !== 'pending' && job.status !== 'running')) return;

@@ -11,7 +11,7 @@ export function startGenerationStage(generationJobId: number, stage: string, inp
     inputJson: JSON.stringify(input), inputArtifactIds: JSON.stringify(inputArtifactIds),
     status: 'running', startedAt: now, updatedAt: now,
   }).returning().get();
-  db.update(schema.generationJobs).set({ currentStage: stage, status: 'running', errorSummary: null, updatedAt: now })
+  db.update(schema.generationJobs).set({ currentStage: stage, status: 'running', taskStatus: 'running', errorSummary: null, updatedAt: now })
     .where(eq(schema.generationJobs.id, generationJobId)).run();
   return run;
 }
@@ -23,7 +23,7 @@ export function finishGenerationStage(stageRunId: number, output: unknown, outpu
     status: 'succeeded', finishedAt: now, updatedAt: now,
   }).where(eq(schema.generationJobStages.id, stageRunId)).returning().get();
   if (!run) throw new Error(`GenerationStageRun ${stageRunId} not found`);
-  db.update(schema.generationJobs).set({ lastSuccessfulStage: run.stage, currentStage: null, status: 'pending', updatedAt: now })
+  db.update(schema.generationJobs).set({ lastSuccessfulStage: run.stage, currentStage: null, status: 'pending', taskStatus: 'queued', updatedAt: now })
     .where(eq(schema.generationJobs.id, run.generationJobId)).run();
   return run;
 }
@@ -36,7 +36,7 @@ export function failGenerationStage(stageRunId: number, error: unknown, retryabl
     errorMessage: message, errorStack: stack, retryable, status: 'failed', finishedAt: now, updatedAt: now,
   }).where(eq(schema.generationJobStages.id, stageRunId)).returning().get();
   if (!run) throw new Error(`GenerationStageRun ${stageRunId} not found`);
-  db.update(schema.generationJobs).set({ currentStage: run.stage, errorSummary: message, status: 'failed', updatedAt: now })
+  db.update(schema.generationJobs).set({ currentStage: run.stage, errorSummary: message, status: 'failed', taskStatus: 'failed', finishedAt: now, updatedAt: now })
     .where(eq(schema.generationJobs.id, run.generationJobId)).run();
   return run;
 }

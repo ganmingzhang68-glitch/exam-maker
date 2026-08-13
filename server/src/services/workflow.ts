@@ -12,12 +12,13 @@ import { analyzeTemplate, saveTemplateOutputs } from './template.js';
 import { assignDifficulty } from './difficultyAssigner.js';
 import { generatePapers } from './paperGenerator.js';
 import { compilePapers } from './compiler.js';
+import { failGenerationStage, finishGenerationStage, startGenerationStage } from './generationJobService.js';
 
 type ProjectRow = typeof schema.projects.$inferSelect;
 const activeWorkflows = new Set<number>();
 
 // ====== Main workflow entry ======
-export async function startWorkflow(projectId: number): Promise<void> {
+export async function startWorkflow(projectId: number, requestId?: string): Promise<void> {
   if (activeWorkflows.has(projectId)) {
     addEvent(projectId, 'workflow', 'log', 'ℹ 工作流正在运行，本次重复启动已忽略');
     return;
@@ -26,6 +27,17 @@ export async function startWorkflow(projectId: number): Promise<void> {
     .where(eq(schema.projects.id, projectId)).get();
 
   if (!project) throw new Error('Project not found');
+  const generationJob = ensureGenerationJob(project, requestId);
+  if (generationJob.taskStatus === 'cancelled') return;
+  if (project.status === 'done' && !generatedSourcesNeedRerender(projectId)) {
+    const now = new Date().toISOString();
+    db.update(schema.generationJobs).set({ taskStatus: 'succeeded', status: 'succeeded', currentStage: null,
+      finishedAt: generationJob.finishedAt ?? now, updatedAt: now }).where(eq(schema.generationJobs.id, generationJob.id)).run();
+    saveToDisk();
+    return;
+  }
+  db.update(schema.generationJobs).set({ taskStatus: 'running', status: 'running', finishedAt: null, updatedAt: new Date().toISOString() })
+    .where(eq(schema.generationJobs.id, generationJob.id)).run();
 
   if (project.status === 'error') {
     const resumeStatus = inferResumeStatus(project);
@@ -52,16 +64,69 @@ export async function startWorkflow(projectId: number): Promise<void> {
 
   activeWorkflows.add(projectId);
   try {
-    await runWorkflow(project);
+    await runWorkflow(project, generationJob.id);
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'Unknown error';
+    const cancelled = db.select({ taskStatus: schema.generationJobs.taskStatus }).from(schema.generationJobs)
+      .where(eq(schema.generationJobs.id, generationJob.id)).get()?.taskStatus === 'cancelled';
+    if (cancelled) {
+      addEvent(projectId, 'workflow', 'log', '⏹ 任务已取消；已完成阶段和产物均已保留');
+      saveToDisk();
+      return;
+    }
     db.update(schema.projects)
       .set({ status: 'error', updatedAt: new Date().toISOString() })
       .where(eq(schema.projects.id, projectId)).run();
+    db.update(schema.generationJobs).set({ taskStatus: 'failed', status: 'failed', errorSummary: msg,
+      finishedAt: new Date().toISOString(), updatedAt: new Date().toISOString() })
+      .where(eq(schema.generationJobs.id, generationJob.id)).run();
     addEvent(projectId, 'error', 'error', `❌ 流程出错: ${msg}`);
     saveToDisk();
   } finally {
     activeWorkflows.delete(projectId);
+  }
+}
+
+function ensureGenerationJob(project: ProjectRow, requestId?: string) {
+  const existing = db.select().from(schema.generationJobs).where(eq(schema.generationJobs.projectId, project.id)).get();
+  if (existing) {
+    if (requestId && !existing.requestId) {
+      return db.update(schema.generationJobs).set({ requestId }).where(eq(schema.generationJobs.id, existing.id)).returning().get();
+    }
+    return existing;
+  }
+  let course = project.courseId
+    ? db.select().from(schema.courses).where(eq(schema.courses.id, project.courseId)).get()
+    : db.select().from(schema.courses).where(and(eq(schema.courses.ownerUserId, project.userId), eq(schema.courses.name, project.course))).get();
+  if (!course) {
+    course = db.insert(schema.courses).values({ ownerUserId: project.userId, name: project.course,
+      status: 'active', instructorName: null }).returning().get();
+  }
+  if (project.courseId !== course.id) {
+    db.update(schema.projects).set({ courseId: course.id, updatedAt: new Date().toISOString() })
+      .where(eq(schema.projects.id, project.id)).run();
+  }
+  return db.insert(schema.generationJobs).values({ projectId: project.id, courseId: course.id,
+    requestedBy: project.userId, pipelineVersion: 'legacy-project-workflow@2', numberOfSets: project.nSets,
+    taskStatus: 'queued', requestId: requestId ?? null, idempotencyKey: `project:${project.id}` }).returning().get();
+}
+
+function assertNotCancelled(generationJobId: number): void {
+  const job = db.select({ taskStatus: schema.generationJobs.taskStatus }).from(schema.generationJobs)
+    .where(eq(schema.generationJobs.id, generationJobId)).get();
+  if (job?.taskStatus === 'cancelled') throw new Error('任务已由用户取消');
+}
+
+async function trackedStage<T>(generationJobId: number, stage: string, work: () => Promise<T>): Promise<T> {
+  assertNotCancelled(generationJobId);
+  const stageRun = startGenerationStage(generationJobId, stage, {});
+  try {
+    const result = await work();
+    finishGenerationStage(stageRun.id, { completed: true });
+    return result;
+  } catch (error) {
+    failGenerationStage(stageRun.id, error, true);
+    throw error;
   }
 }
 
@@ -123,7 +188,7 @@ function generatedSourcesNeedRerender(projectId: number): boolean {
   });
 }
 
-async function runWorkflow(project: ProjectRow): Promise<void> {
+async function runWorkflow(project: ProjectRow, generationJobId: number): Promise<void> {
   const id = project.id;
   const difficulty = JSON.parse(project.difficulty as string) as DifficultyRatio;
 
@@ -144,13 +209,16 @@ async function runWorkflow(project: ProjectRow): Promise<void> {
   // Step 1: Parse past papers → LaTeX
   if (current.status === 'parsing') {
     addEvent(id, 'step-1', 'progress', '📄 开始解析真题文件...');
-    const hasPapers = await step1ParsePapers(id);
+    const hasPapers = await trackedStage(generationJobId, 'document_extraction', () => step1ParsePapers(id));
 
     if (!hasPapers) {
       // No past papers uploaded — cannot proceed
       addEvent(id, 'step-1', 'error', '❌ 未找到真题文件，流程无法继续');
       addEvent(id, 'step-1', 'log', '💡 请先上传往年真题文件（pdf/docx/doc/tex/md），再点击重试');
       await updateStatus(id, 'error');
+      const now = new Date().toISOString();
+      db.update(schema.generationJobs).set({ taskStatus: 'failed', status: 'failed', errorSummary: '未找到真题文件',
+        finishedAt: now, updatedAt: now }).where(eq(schema.generationJobs.id, generationJobId)).run();
       saveToDisk();
       return;
     }
@@ -163,10 +231,13 @@ async function runWorkflow(project: ProjectRow): Promise<void> {
   // Step 2: Build blueprint → wait for teacher
   if (current.status === 'blueprinting') {
     addEvent(id, 'step-2', 'progress', '🔍 正在分析考点，构建双向细目表...');
-    const blueprintPath = await step2BuildBlueprint(id, project, difficulty);
+    const blueprintPath = await trackedStage(generationJobId, 'historical_blueprint_generation', () => step2BuildBlueprint(id, project, difficulty));
     await resetCheckpointForReview(id, 'blueprint');
     addEvent(id, 'step-2', 'done', '✅ 双向细目表已生成', { file: blueprintPath });
     addEvent(id, 'step-2', 'log', '⏸ 请审核双向细目表，确认后流程继续');
+    saveToDisk();
+    db.update(schema.generationJobs).set({ taskStatus: 'blocked', status: 'pending', updatedAt: new Date().toISOString() })
+      .where(eq(schema.generationJobs.id, generationJobId)).run();
     saveToDisk();
     return;
   }
@@ -174,10 +245,13 @@ async function runWorkflow(project: ProjectRow): Promise<void> {
   // Step 3: Extract template → wait for teacher
   if (current.status === 'templating') {
     addEvent(id, 'step-3', 'progress', '📐 正在提取试卷模板...');
-    const templatePath = await step3ExtractTemplate(id, project);
+    const templatePath = await trackedStage(generationJobId, 'exam_template_extraction', () => step3ExtractTemplate(id, project));
     await resetCheckpointForReview(id, 'template');
     addEvent(id, 'step-3', 'done', '✅ 试卷模板已提取', { file: templatePath });
     addEvent(id, 'step-3', 'log', '⏸ 请审核试卷模板（题型/分值/时长），确认后流程继续');
+    saveToDisk();
+    db.update(schema.generationJobs).set({ taskStatus: 'blocked', status: 'pending', updatedAt: new Date().toISOString() })
+      .where(eq(schema.generationJobs.id, generationJobId)).run();
     saveToDisk();
     return;
   }
@@ -185,7 +259,7 @@ async function runWorkflow(project: ProjectRow): Promise<void> {
   // Step 4: Assign difficulty ratios to template slots (auto, no teacher confirmation)
   if (current.status === 'assigning') {
     addEvent(id, 'step-4', 'progress', '🎯 正在将难度配比落到模板题位...');
-    const result = await assignDifficulty(id, difficulty);
+    const result = await trackedStage(generationJobId, 'paper_generation_planning', () => assignDifficulty(id, difficulty));
     if (result.passed) {
       addEvent(id, 'step-4', 'done', `✅ 难度核算达标: 基础${result.basicPct}% / 中等${result.mediumPct}% / 难${result.hardPct}%`);
     } else {
@@ -199,10 +273,9 @@ async function runWorkflow(project: ProjectRow): Promise<void> {
   // Step 5: Generate N sets of papers
   if (current.status === 'generating') {
     addEvent(id, 'step-5', 'progress', `📝 开始生成 ${project.nSets} 套试卷...`);
-    const results = await generatePapers(
-      id, project.course, project.nSets, difficulty,
-      project.scope, project.verifyMode
-    );
+    const results = await trackedStage(generationJobId, 'question_generation', () => generatePapers(
+      id, project.course, project.nSets, difficulty, project.scope, project.verifyMode
+    ));
     const successCount = results.filter(r => r.texSize > 0).length;
     if (successCount === 0) {
       throw new Error('试卷生成失败：没有产生可交付试卷，已保留前序解析、细目表和模板结果');
@@ -219,7 +292,7 @@ async function runWorkflow(project: ProjectRow): Promise<void> {
   // Step 6: Compile/convert + deliver → wait for teacher selection
   if (current.status === 'compiling') {
     addEvent(id, 'step-6', 'progress', '🔧 正在编译/转换产出文件...');
-    const results = await compilePapers(id, project.outputType);
+    const results = await trackedStage(generationJobId, 'paper_export', () => compilePapers(id, project.outputType));
     const successCount = results.filter(r => r.success).length;
     if (results.length === 0 || successCount !== results.length) {
       throw new Error(`制品导出不完整：${successCount}/${results.length} 个制品通过 PDF、DOCX、Markdown 生成检查`);
@@ -227,6 +300,9 @@ async function runWorkflow(project: ProjectRow): Promise<void> {
     addEvent(id, 'step-6', 'done', `✅ ${successCount}/${results.length} 个制品编译/转换完成`);
     addEvent(id, 'step-6', 'log', '⏸ 请从生成的试卷中选择要采用的套数并下载');
     await updateStatus(id, 'done');
+    const now = new Date().toISOString();
+    db.update(schema.generationJobs).set({ taskStatus: 'succeeded', status: 'succeeded', currentStage: null,
+      errorSummary: null, finishedAt: now, updatedAt: now }).where(eq(schema.generationJobs.id, generationJobId)).run();
   }
 
   saveToDisk();

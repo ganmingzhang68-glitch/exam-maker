@@ -9,6 +9,7 @@ const JWT_SECRET = process.env.JWT_SECRET || 'exam-maker-secret-dev';
 export interface AuthRequest extends Request {
   userId?: number;
   userRole?: UserRole;
+  requestId?: string;
 }
 
 export function generateToken(userId: number, role: UserRole): string {

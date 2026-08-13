@@ -17,6 +17,7 @@ import {
   ReadOutlined,
   TeamOutlined,
   DashboardOutlined,
+  ClockCircleOutlined,
 } from '@ant-design/icons';
 import { useAuthStore } from '../store/authStore';
 
@@ -45,12 +46,15 @@ const AppLayout: React.FC = () => {
       { key: '/questions', icon: <DatabaseOutlined />, label: '教师题库' },
       { key: '/papers', icon: <FileDoneOutlined />, label: '试卷管理' },
       { key: '/exams', icon: <CalendarOutlined />, label: '考试管理' },
+      { key: '/teacher/tasks', icon: <ClockCircleOutlined />, label: '后台任务' },
     ];
 
   const selectedMenuKey = location.pathname.startsWith('/student/dashboard')
     ? '/student/dashboard'
     : location.pathname.startsWith('/student/exams') || location.pathname.startsWith('/attempts/')
     ? '/student/exams'
+    : location.pathname.startsWith('/teacher/tasks')
+    ? '/teacher/tasks'
     : location.pathname.startsWith('/courses')
     ? '/courses'
     : location.pathname.startsWith('/classes')

@@ -267,6 +267,48 @@ export interface QuestionSource {
 
 // ============ Similar question generation ============
 export type SimilarQuestionJobStatus = 'pending' | 'running' | 'succeeded' | 'failed' | 'saved';
+export type TaskStatus = 'queued' | 'running' | 'retrying' | 'succeeded' | 'failed' | 'cancelled' | 'blocked';
+export type TaskKind = 'generation' | 'similar_question';
+
+export interface TaskStageAttempt {
+  id: number;
+  stage: string;
+  attemptNumber: number;
+  status: string;
+  retryable: boolean;
+  startedAt: string | null;
+  finishedAt: string | null;
+  durationMs: number | null;
+  error: string | null;
+}
+
+export interface TaskSummary {
+  key: string;
+  id: number;
+  kind: TaskKind;
+  name: string;
+  course: string | null;
+  status: TaskStatus;
+  currentStage: string | null;
+  completedStages: number;
+  totalStages: number;
+  createdAt: string;
+  updatedAt: string;
+  finishedAt: string | null;
+  durationMs: number | null;
+  error: string | null;
+  requestId: string | null;
+  model: string | null;
+  inputTokens: number;
+  outputTokens: number;
+  estimatedCost: number | null;
+  resultPath: string | null;
+}
+
+export interface TaskDetail extends TaskSummary {
+  attempts: TaskStageAttempt[];
+  costNote: string;
+}
 export type SimilarQuestionDifficultyMode = 'same' | 'lower' | 'higher';
 
 export interface SimilarQuestionStage {
@@ -309,6 +351,8 @@ export interface SimilarQuestionJob {
   defaultScore: number;
   difficultyMode: SimilarQuestionDifficultyMode;
   status: SimilarQuestionJobStatus;
+  taskStatus?: TaskStatus;
+  requestId?: string | null;
   currentStage: string | null;
   lastSuccessfulStage: string | null;
   errorSummary: string | null;

@@ -53,6 +53,8 @@ function serializeJob(row: JobRow, includeSource = true) {
     defaultScore: row.defaultScore,
     difficultyMode: row.difficultyMode,
     status: row.status,
+    taskStatus: row.taskStatus ?? (row.status === 'pending' ? 'queued' : row.status === 'saved' ? 'succeeded' : row.status),
+    requestId: row.requestId,
     currentStage: row.currentStage,
     lastSuccessfulStage: row.lastSuccessfulStage,
     errorSummary: row.errorSummary,
@@ -75,6 +77,18 @@ function difficultyLevel(item: SimilarQuestionResultItem): 'basic' | 'medium' | 
 export function createSimilarQuestionJob(req: AuthRequest, res: Response, next: NextFunction) {
   try {
     const input = createSimilarQuestionJobSchema.parse(req.body);
+    const idempotencyKey = req.header('Idempotency-Key')?.trim() || null;
+    if (idempotencyKey && !/^[A-Za-z0-9._:-]{8,128}$/.test(idempotencyKey)) {
+      throw new AppError(400, 'Idempotency-Key 必须为 8-128 位字母、数字或 ._:-');
+    }
+    if (idempotencyKey) {
+      const existing = db.select().from(schema.similarQuestionJobs).where(and(
+        eq(schema.similarQuestionJobs.requestedBy, req.userId!),
+        eq(schema.similarQuestionJobs.idempotencyKey, idempotencyKey),
+      )).get();
+      if (existing) return res.status(existing.taskStatus === 'succeeded' ? 200 : 202)
+        .json({ success: true, data: serializeJob(existing) });
+    }
     const now = new Date().toISOString();
     const row = db.insert(schema.similarQuestionJobs).values({
       requestedBy: req.userId!,
@@ -86,6 +100,9 @@ export function createSimilarQuestionJob(req: AuthRequest, res: Response, next: 
       defaultScore: input.defaultScore,
       difficultyMode: input.difficultyMode,
       status: 'pending',
+      taskStatus: 'queued',
+      requestId: req.requestId ?? null,
+      idempotencyKey,
       updatedAt: now,
     }).returning().get();
     saveToDisk();

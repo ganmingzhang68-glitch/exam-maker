@@ -22,6 +22,8 @@ import courseRoutes from './routes/course.js';
 import teachingClassRoutes from './routes/teachingClass.js';
 import dashboardRoutes from './routes/dashboard.js';
 import { resumeSimilarQuestionJobs } from './services/similarQuestionPipeline.js';
+import { requestIdMiddleware } from './middleware/requestId.js';
+import taskRoutes from './routes/task.js';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -30,6 +32,7 @@ const PORT = process.env.PORT || 3001;
 app.use(cors({ origin: 'http://localhost:5173', credentials: true }));
 app.use(morgan('dev'));
 app.use(express.json());
+app.use(requestIdMiddleware);
 app.use(authMiddleware);
 
 // Health check
@@ -49,6 +52,7 @@ app.use('/api/similar-question-jobs', similarQuestionRoutes);
 app.use('/api/courses', courseRoutes);
 app.use('/api/classes', teachingClassRoutes);
 app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/tasks', taskRoutes);
 
 // Error handler (must be last)
 app.use(errorHandler);

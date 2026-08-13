@@ -193,7 +193,7 @@ export async function startProjectWorkflow(req: AuthRequest, res: Response, next
     res.json({ success: true, message: '工作流已启动' });
 
     // Run workflow asynchronously
-    startWorkflow(projectId).catch((err) => {
+    startWorkflow(projectId, req.requestId).catch((err) => {
       console.error('Workflow error:', err);
     });
   } catch (err) { next(err); }

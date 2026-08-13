@@ -186,6 +186,13 @@ export const saveSimilarQuestionJobSchema = z.object({
   questionIds: z.array(z.number().int().positive()).min(1).max(100),
 }).strict();
 
+export const taskKindSchema = z.enum(['generation', 'similar_question']);
+export const taskListQuerySchema = z.object({
+  status: z.enum(['queued', 'running', 'retrying', 'succeeded', 'failed', 'cancelled', 'blocked']).optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+  offset: z.coerce.number().int().min(0).default(0),
+}).strict();
+
 export const paperStatusSchema = z.enum(['draft', 'ready', 'archived']);
 
 export const createPaperSchema = z.object({
