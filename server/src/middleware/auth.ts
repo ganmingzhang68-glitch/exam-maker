@@ -13,7 +13,8 @@ export interface AuthRequest extends Request {
 }
 
 export function generateToken(userId: number, role: UserRole): string {
-  return jwt.sign({ userId, role }, JWT_SECRET, { expiresIn: '7d' });
+  const tokenVersion = db.select({ tokenVersion: schema.users.tokenVersion }).from(schema.users).where(eq(schema.users.id, userId)).get()?.tokenVersion ?? 0;
+  return jwt.sign({ userId, role, tokenVersion }, JWT_SECRET, { expiresIn: '7d' });
 }
 
 export function authMiddleware(req: AuthRequest, _res: Response, next: NextFunction) {
@@ -28,9 +29,10 @@ export function authMiddleware(req: AuthRequest, _res: Response, next: NextFunct
 
   if (token) {
     try {
-      const payload = jwt.verify(token, JWT_SECRET) as { userId: number; role: UserRole };
-      req.userId = payload.userId;
-      req.userRole = payload.role;
+      const payload = jwt.verify(token, JWT_SECRET) as { userId: number; role: UserRole; tokenVersion?: number };
+      const user = db.select({ id: schema.users.id, role: schema.users.role, isActive: schema.users.isActive, tokenVersion: schema.users.tokenVersion })
+        .from(schema.users).where(eq(schema.users.id, payload.userId)).get();
+      if (user?.isActive && user.tokenVersion === (payload.tokenVersion ?? 0)) { req.userId = user.id; req.userRole = user.role; }
     } catch {
       // Token invalid, continue without auth
     }

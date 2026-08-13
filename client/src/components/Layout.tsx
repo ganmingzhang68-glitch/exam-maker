@@ -39,7 +39,11 @@ const AppLayout: React.FC = () => {
       { key: '/student/practice', icon: <EditOutlined />, label: '自主练习' },
       { key: '/student/grade-reviews', icon: <AuditOutlined />, label: '成绩复核' },
     ]
-    : [
+    : user?.role === 'admin' ? [
+      { key: '/admin', icon: <DashboardOutlined />, label: '管理员控制台' },
+      { key: '/courses', icon: <ReadOutlined />, label: '全部课程' },
+      { key: '/teacher/tasks', icon: <ClockCircleOutlined />, label: '系统任务' },
+    ] : [
       { key: '/', icon: <DashboardOutlined />, label: '教师首页' },
       { key: '/courses', icon: <ReadOutlined />, label: '课程管理' },
       { key: '/classes', icon: <TeamOutlined />, label: '班级管理' },
@@ -86,7 +90,7 @@ const AppLayout: React.FC = () => {
           ? '/projects/new'
           : location.pathname.startsWith('/projects/') || location.pathname === '/projects'
             ? '/projects'
-            : '/';
+            : location.pathname.startsWith('/admin') ? '/admin' : '/';
 
   const userMenuItems = [
     { key: 'logout', icon: <LogoutOutlined />, label: '退出登录', danger: true },

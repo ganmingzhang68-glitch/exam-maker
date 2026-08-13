@@ -6,8 +6,13 @@ export interface User {
   username: string;
   email: string;
   role: UserRole;
+  isActive: boolean;
+  disabledAt: string | null;
   createdAt: string;
+  updatedAt: string;
 }
+
+export interface AdminDashboard { users: { total: number; active: number; teachers: number; students: number; admins: number }; resources: { courses: number; classes: number; exams: number; questions: number }; tasks: { total: number; running: number; failed: number; blocked: number }; ai: { calls: number; inputTokens: number; outputTokens: number; failedRate: number | null; averageLatencyMs: number | null; estimatedCost: number | null; currency: string | null; byModel: Array<{ provider: string; model: string; calls: number; inputTokens: number; outputTokens: number; failedRate: number | null; averageLatencyMs: number | null; estimatedCost: number | null }>; byCourse: Array<{ courseId: number | null; courseName: string; calls: number; totalTokens: number }>; byFeature: Array<{ feature: string; calls: number; totalTokens: number }> }; health: { status: 'ok' | 'degraded'; database: 'ok'; failedTaskCount: number; lastAiRunAt: string | null } }
 
 // ============ Project ============
 export type ProjectStatus =

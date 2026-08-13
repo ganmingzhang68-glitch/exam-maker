@@ -35,12 +35,14 @@ import StudentPracticeSession from './pages/StudentPracticeSession';
 import TeachingAnalytics from './pages/TeachingAnalytics';
 import StudentGradeReviews from './pages/StudentGradeReviews';
 import TeacherGradeReviews from './pages/TeacherGradeReviews';
+import AdminConsole from './pages/AdminConsole';
 
 const teacherRoles = ['teacher', 'admin'] as const;
 
 const HomeRoute: React.FC = () => {
   const user = useAuthStore((state) => state.user);
   if (user?.role === 'student') return <Navigate to="/student/dashboard" replace />;
+  if (user?.role === 'admin') return <Navigate to="/admin" replace />;
   return <TeacherDashboard />;
 };
 
@@ -51,6 +53,7 @@ const TeacherRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => 
 const StudentRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   <ProtectedRoute allowedRoles={['student']}>{children}</ProtectedRoute>
 );
+const AdminRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => <ProtectedRoute allowedRoles={['admin']}>{children}</ProtectedRoute>;
 
 const App: React.FC = () => {
   const initialize = useAuthStore((s) => s.initialize);
@@ -74,6 +77,7 @@ const App: React.FC = () => {
         }
       >
         <Route path="/" element={<HomeRoute />} />
+        <Route path="/admin" element={<AdminRoute><AdminConsole /></AdminRoute>} />
         <Route path="/projects" element={<TeacherRoute><ProjectList /></TeacherRoute>} />
         <Route path="/projects/new" element={<TeacherRoute><ProjectNew /></TeacherRoute>} />
         <Route path="/courses" element={<TeacherRoute><CourseList /></TeacherRoute>} />

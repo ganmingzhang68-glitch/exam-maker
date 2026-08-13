@@ -22,6 +22,7 @@ import { studentKnowledgeMasteryMigration } from './migrations/019_student_knowl
 import { practiceSessionsMigration } from './migrations/020_practice_sessions.js';
 import { teachingAnalyticsMigration } from './migrations/021_teaching_analytics.js';
 import { gradeReviewsMigration } from './migrations/022_grade_reviews.js';
+import { adminConsoleMigration } from './migrations/023_admin_console.js';
 
 interface Migration {
   id: string;
@@ -51,6 +52,7 @@ const migrations: Migration[] = [
   practiceSessionsMigration,
   teachingAnalyticsMigration,
   gradeReviewsMigration,
+  adminConsoleMigration,
 ];
 
 export function runMigrations(database: Database = rawDb): void {

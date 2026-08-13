@@ -12,6 +12,10 @@ export const registerSchema = z.object({
   password: z.string().min(6, '密码至少6个字符'),
 });
 
+export const adminCreateUserSchema = z.object({ username: z.string().trim().min(2).max(50), email: z.string().email(), password: z.string().min(8).max(200), role: z.enum(['teacher', 'student', 'admin']) }).strict();
+export const adminUpdateUserSchema = z.object({ role: z.enum(['teacher', 'student', 'admin']).optional(), isActive: z.boolean().optional(), resetLoginState: z.boolean().optional() }).strict().refine(value => Object.keys(value).length > 0, '至少提供一个修改字段');
+export const aiCostConfigSchema = z.object({ provider: z.string().trim().min(1).max(100), model: z.string().trim().min(1).max(200), inputCostPerMillion: z.number().min(0), outputCostPerMillion: z.number().min(0), currency: z.string().trim().length(3).default('USD'), effectiveFrom: z.string().datetime({ offset: true }), effectiveTo: z.string().datetime({ offset: true }).nullable().optional() }).strict();
+
 // ============ Project ============
 export const difficultyRatioSchema = z.object({
   basic: z.number().min(0).max(100),

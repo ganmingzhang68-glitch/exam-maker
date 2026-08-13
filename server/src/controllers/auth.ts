@@ -49,7 +49,10 @@ export async function register(req: Request, res: Response, next: NextFunction) 
           username: result.username,
           email: result.email,
           role: result.role,
+          isActive: result.isActive,
+          disabledAt: result.disabledAt,
           createdAt: result.createdAt,
+          updatedAt: result.updatedAt,
         },
       },
     });
@@ -71,6 +74,7 @@ export async function login(req: Request, res: Response, next: NextFunction) {
     if (!user) {
       throw new AppError(401, '用户名或密码错误');
     }
+    if (!user.isActive) throw new AppError(403, '账号已被管理员禁用');
 
     const valid = await bcrypt.compare(data.password, user.passwordHash);
     if (!valid) {
@@ -89,6 +93,9 @@ export async function login(req: Request, res: Response, next: NextFunction) {
           email: user.email,
           role: user.role,
           createdAt: user.createdAt,
+          isActive: user.isActive,
+          disabledAt: user.disabledAt,
+          updatedAt: user.updatedAt,
         },
       },
     });
@@ -110,6 +117,9 @@ export function getMe(req: AuthRequest, res: Response, next: NextFunction) {
         email: schema.users.email,
         role: schema.users.role,
         createdAt: schema.users.createdAt,
+        isActive: schema.users.isActive,
+        disabledAt: schema.users.disabledAt,
+        updatedAt: schema.users.updatedAt,
       })
       .from(schema.users)
       .where(eq(schema.users.id, req.userId))

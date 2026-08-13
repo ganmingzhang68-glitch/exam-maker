@@ -7,7 +7,11 @@ export const users = sqliteTable('users', {
   email: text('email').notNull().unique(),
   passwordHash: text('password_hash').notNull(),
   role: text('role', { enum: ['teacher', 'student', 'admin'] }).notNull().default('student'),
+  isActive: integer('is_active', { mode: 'boolean' }).notNull().default(true),
+  tokenVersion: integer('token_version').notNull().default(0),
+  disabledAt: text('disabled_at'),
   createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
+  updatedAt: text('updated_at').notNull().default(sql`(datetime('now'))`),
 });
 
 export const courses = sqliteTable('courses', {
@@ -1028,3 +1032,18 @@ export const gradeAuditLogs = sqliteTable('grade_audit_logs', {
 }, (table) => ({
   reviewIdx: index('grade_audit_logs_review_idx').on(table.gradeReviewId, table.createdAt),
 }));
+
+export const systemAuditLogs = sqliteTable('system_audit_logs', {
+  id: integer('id').primaryKey({ autoIncrement: true }), actorUserId: integer('actor_user_id').references(() => users.id, { onDelete: 'set null' }),
+  action: text('action').notNull(), resourceType: text('resource_type').notNull(), resourceId: text('resource_id'),
+  beforeJson: text('before_json'), afterJson: text('after_json'), requestId: text('request_id'), ipAddress: text('ip_address'),
+  createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
+}, (table) => ({ createdIdx: index('system_audit_logs_created_idx').on(table.createdAt), resourceIdx: index('system_audit_logs_resource_idx').on(table.resourceType, table.resourceId) }));
+
+export const aiCostConfigs = sqliteTable('ai_cost_configs', {
+  id: integer('id').primaryKey({ autoIncrement: true }), provider: text('provider').notNull(), model: text('model').notNull(),
+  inputCostPerMillion: real('input_cost_per_million').notNull(), outputCostPerMillion: real('output_cost_per_million').notNull(),
+  currency: text('currency').notNull().default('USD'), effectiveFrom: text('effective_from').notNull(), effectiveTo: text('effective_to'),
+  createdBy: integer('created_by').notNull().references(() => users.id, { onDelete: 'restrict' }),
+  createdAt: text('created_at').notNull().default(sql`(datetime('now'))`), updatedAt: text('updated_at').notNull().default(sql`(datetime('now'))`),
+}, (table) => ({ modelEffectiveUnique: uniqueIndex('ai_cost_configs_model_effective_unique').on(table.provider, table.model, table.effectiveFrom) }));
