@@ -10,6 +10,8 @@ export interface AuthRequest extends Request {
   userId?: number;
   userRole?: UserRole;
   requestId?: string;
+  organizationId?: number;
+  organizationExplicit?: boolean;
 }
 
 export function generateToken(userId: number, role: UserRole): string {

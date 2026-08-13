@@ -167,9 +167,10 @@ export function saveSimilarQuestionResults(req: AuthRequest, res: Response, next
     }
 
     const now = new Date().toISOString();
-    const courseId = db.select({ id: schema.courses.id }).from(schema.courses).where(and(
+    const courseRow = db.select({ id: schema.courses.id, organizationId: schema.courses.organizationId }).from(schema.courses).where(and(
       eq(schema.courses.ownerUserId, job.requestedBy), eq(schema.courses.name, job.course),
-    )).get()?.id ?? null;
+    )).get();
+    const courseId = courseRow?.id ?? null;
     for (const item of selected) {
       const existing = generatedRows.find(row => row.id === item.generatedQuestionId);
       let legacyQuestionId = existing?.legacyQuestionId ?? null;
@@ -179,6 +180,7 @@ export function saveSimilarQuestionResults(req: AuthRequest, res: Response, next
           : null;
         const inserted = db.insert(schema.questions).values({
           createdBy: job.requestedBy,
+          organizationId: courseRow?.organizationId ?? 1,
           courseId,
           sourceQuestionNo: item.sourceQuestionNo,
           type: item.questionType,

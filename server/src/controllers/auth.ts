@@ -37,6 +37,7 @@ export async function register(req: Request, res: Response, next: NextFunction) 
       })
       .returning()
       .get();
+    db.insert(schema.userOrganizations).values({ userId: result.id, organizationId: 1, role: 'member', isDefault: true }).run();
 
     const token = generateToken(result.id, result.role);
 

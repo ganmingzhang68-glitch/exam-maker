@@ -9,6 +9,7 @@ import {
 import { db, saveToDisk, schema } from '../db/index.js';
 import { AppError } from '../middleware/errorHandler.js';
 import type { AuthRequest } from '../middleware/auth.js';
+import { canAccessOrganization } from '../middleware/organization.js';
 import { getCourseDifficultyCalibration as buildCourseDifficultyCalibration } from '../services/difficultyCalibration.js';
 import { getCourseGradingCalibration as buildCourseGradingCalibration } from '../services/gradingCalibration.js';
 
@@ -30,6 +31,7 @@ function serializeCourse(row: CourseRow) {
 function getOwnedCourse(req: AuthRequest, id: number): CourseRow {
   const course = db.select().from(schema.courses).where(eq(schema.courses.id, id)).get();
   if (!course) throw new AppError(404, '课程不存在');
+  if (!canAccessOrganization(req, course.organizationId)) throw new AppError(403, '无权访问该组织的课程');
   if (req.userRole !== 'admin' && course.ownerUserId !== req.userId) {
     throw new AppError(403, '无权访问该课程');
   }
@@ -86,6 +88,7 @@ export function listCourses(req: AuthRequest, res: Response, next: NextFunction)
   try {
     const query = courseListQuerySchema.parse(req.query);
     const conditions = [];
+    if (req.organizationExplicit) conditions.push(eq(schema.courses.organizationId, req.organizationId!));
     if (req.userRole !== 'admin') conditions.push(eq(schema.courses.ownerUserId, req.userId!));
     if (query.status) conditions.push(eq(schema.courses.status, query.status));
     if (query.search) {
@@ -135,6 +138,7 @@ export function createCourse(req: AuthRequest, res: Response, next: NextFunction
     const now = new Date().toISOString();
     const row = db.insert(schema.courses).values({
       ownerUserId: req.userId!,
+      organizationId: req.organizationId ?? 1,
       name: data.name,
       code: data.code ?? null,
       semester: data.semester ?? null,

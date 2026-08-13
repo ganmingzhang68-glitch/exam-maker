@@ -14,9 +14,22 @@ export const users = sqliteTable('users', {
   updatedAt: text('updated_at').notNull().default(sql`(datetime('now'))`),
 });
 
+export const organizations = sqliteTable('organizations', {
+  id: integer('id').primaryKey({ autoIncrement: true }), name: text('name').notNull(), code: text('code').notNull().unique(),
+  status: text('status', { enum: ['active', 'archived'] }).notNull().default('active'), createdBy: integer('created_by').references(() => users.id, { onDelete: 'set null' }),
+  createdAt: text('created_at').notNull().default(sql`(datetime('now'))`), updatedAt: text('updated_at').notNull().default(sql`(datetime('now'))`),
+});
+export const userOrganizations = sqliteTable('user_organizations', {
+  id: integer('id').primaryKey({ autoIncrement: true }), userId: integer('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  organizationId: integer('organization_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+  role: text('role', { enum: ['owner', 'admin', 'member'] }).notNull().default('member'), isDefault: integer('is_default', { mode: 'boolean' }).notNull().default(false),
+  createdAt: text('created_at').notNull().default(sql`(datetime('now'))`), updatedAt: text('updated_at').notNull().default(sql`(datetime('now'))`),
+}, table => ({ userOrgUnique: uniqueIndex('user_organizations_user_org_unique').on(table.userId, table.organizationId), orgIdx: index('user_organizations_org_idx').on(table.organizationId, table.role) }));
+
 export const courses = sqliteTable('courses', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   ownerUserId: integer('owner_user_id').notNull().references(() => users.id),
+  organizationId: integer('organization_id').notNull().default(1).references(() => organizations.id),
   code: text('code'),
   name: text('name').notNull(),
   semester: text('semester'),
@@ -34,6 +47,7 @@ export const courses = sqliteTable('courses', {
 export const teachingClasses = sqliteTable('teaching_classes', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   courseId: integer('course_id').notNull().references(() => courses.id, { onDelete: 'restrict' }),
+  organizationId: integer('organization_id').notNull().default(1).references(() => organizations.id),
   teacherUserId: integer('teacher_user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),
   name: text('name').notNull(),
   semester: text('semester'),
@@ -643,6 +657,7 @@ export const exportArtifacts = sqliteTable('export_artifacts', {
 export const questions = sqliteTable('questions', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   createdBy: integer('created_by').notNull().references(() => users.id),
+  organizationId: integer('organization_id').notNull().default(1).references(() => organizations.id),
   courseId: integer('course_id').references(() => courses.id, { onDelete: 'set null' }),
   sourceFileId: integer('source_file_id').references(() => projectFiles.id, { onDelete: 'set null' }),
   sourceProjectId: integer('source_project_id').references(() => projects.id, { onDelete: 'set null' }),
@@ -690,6 +705,7 @@ export const questionVersions = sqliteTable('question_versions', {
 export const papers = sqliteTable('papers', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   createdBy: integer('created_by').notNull().references(() => users.id),
+  organizationId: integer('organization_id').notNull().default(1).references(() => organizations.id),
   courseId: integer('course_id').references(() => courses.id, { onDelete: 'set null' }),
   sourceProjectId: integer('source_project_id').references(() => projects.id, { onDelete: 'set null' }),
   title: text('title').notNull(),
@@ -723,6 +739,7 @@ export const paperQuestions = sqliteTable('paper_questions', {
 export const exams = sqliteTable('exams', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   paperId: integer('paper_id').notNull().references(() => papers.id),
+  organizationId: integer('organization_id').notNull().default(1).references(() => organizations.id),
   createdBy: integer('created_by').notNull().references(() => users.id),
   title: text('title').notNull(),
   status: text('status', { enum: ['draft', 'published', 'closed'] }).notNull().default('draft'),

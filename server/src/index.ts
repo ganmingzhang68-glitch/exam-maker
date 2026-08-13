@@ -30,6 +30,8 @@ import practiceRoutes from './routes/practice.js';
 import teachingAnalyticsRoutes from './routes/teachingAnalytics.js';
 import gradeReviewRoutes from './routes/gradeReview.js';
 import adminRoutes from './routes/admin.js';
+import organizationRoutes from './routes/organization.js';
+import { organizationMiddleware } from './middleware/organization.js';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -40,6 +42,7 @@ app.use(morgan('dev'));
 app.use(express.json());
 app.use(requestIdMiddleware);
 app.use(authMiddleware);
+app.use(organizationMiddleware);
 
 // Health check
 app.get('/api/health', (_req, res) => {
@@ -64,6 +67,7 @@ app.use('/api/practice', practiceRoutes);
 app.use('/api/teaching-analytics', teachingAnalyticsRoutes);
 app.use('/api/grade-reviews', gradeReviewRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/organizations', organizationRoutes);
 
 // Error handler (must be last)
 app.use(errorHandler);

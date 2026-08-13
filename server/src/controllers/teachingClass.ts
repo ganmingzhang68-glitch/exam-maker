@@ -12,12 +12,14 @@ import {
 import { db, rawDb, saveToDisk, schema } from '../db/index.js';
 import { AppError } from '../middleware/errorHandler.js';
 import type { AuthRequest } from '../middleware/auth.js';
+import { canAccessOrganization } from '../middleware/organization.js';
 
 type ClassRow = typeof schema.teachingClasses.$inferSelect;
 
 function getOwnedCourse(req: AuthRequest, courseId: number) {
   const course = db.select().from(schema.courses).where(eq(schema.courses.id, courseId)).get();
   if (!course) throw new AppError(404, '课程不存在');
+  if (!canAccessOrganization(req, course.organizationId)) throw new AppError(403, '无权访问该组织的课程');
   if (req.userRole !== 'admin' && course.ownerUserId !== req.userId) throw new AppError(403, '无权管理该课程');
   return course;
 }
@@ -25,6 +27,7 @@ function getOwnedCourse(req: AuthRequest, courseId: number) {
 function getOwnedClass(req: AuthRequest, classId: number): ClassRow {
   const row = db.select().from(schema.teachingClasses).where(eq(schema.teachingClasses.id, classId)).get();
   if (!row) throw new AppError(404, '班级不存在');
+  if (!canAccessOrganization(req, row.organizationId)) throw new AppError(403, '无权访问该组织的班级');
   if (req.userRole !== 'admin' && row.teacherUserId !== req.userId) throw new AppError(403, '无权管理该班级');
   return row;
 }
@@ -95,6 +98,7 @@ export function listTeachingClasses(req: AuthRequest, res: Response, next: NextF
   try {
     const query = teachingClassListQuerySchema.parse(req.query);
     const conditions = [];
+    if (req.organizationExplicit) conditions.push(eq(schema.teachingClasses.organizationId, req.organizationId!));
     if (req.userRole !== 'admin') conditions.push(eq(schema.teachingClasses.teacherUserId, req.userId!));
     if (query.courseId) conditions.push(eq(schema.teachingClasses.courseId, query.courseId));
     if (query.status) conditions.push(eq(schema.teachingClasses.status, query.status));
@@ -115,6 +119,7 @@ export function createTeachingClass(req: AuthRequest, res: Response, next: NextF
     const now = new Date().toISOString();
     const row = db.insert(schema.teachingClasses).values({
       courseId: data.courseId,
+      organizationId: course.organizationId,
       teacherUserId: req.userId!,
       name: data.name,
       semester: data.semester ?? course.semester,

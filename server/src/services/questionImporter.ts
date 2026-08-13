@@ -124,6 +124,9 @@ export function parseGeneratedPaperQuestions(tex: string): ImportedQuestionDraft
 export function importGeneratedQuestionsFromProject(projectId: number): { imported: number; skipped: number } {
   const project = db.select().from(schema.projects).where(eq(schema.projects.id, projectId)).get();
   if (!project) return { imported: 0, skipped: 0 };
+  const course = project.courseId ? db.select().from(schema.courses).where(eq(schema.courses.id, project.courseId)).get() : null;
+  const organizationId = course?.organizationId ?? db.select({ organizationId: schema.userOrganizations.organizationId }).from(schema.userOrganizations)
+    .where(and(eq(schema.userOrganizations.userId, project.userId), eq(schema.userOrganizations.isDefault, true))).get()?.organizationId ?? 1;
 
   const generatedFiles = db.select().from(schema.projectFiles).where(and(
     eq(schema.projectFiles.projectId, projectId),
@@ -147,6 +150,8 @@ export function importGeneratedQuestionsFromProject(projectId: number): { import
       }
       db.insert(schema.questions).values({
         createdBy: project.userId,
+        organizationId,
+        courseId: project.courseId,
         sourceFileId: file.id,
         sourceProjectId: projectId,
         sourceQuestionNo: draft.sourceQuestionNo,

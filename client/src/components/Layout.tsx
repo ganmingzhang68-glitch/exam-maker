@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
-import { Layout as AntLayout, Menu, Button, Avatar, Dropdown, theme } from 'antd';
+import { Layout as AntLayout, Menu, Button, Avatar, Dropdown, Select, theme } from 'antd';
 import {
   ProjectOutlined,
   PlusOutlined,
@@ -21,6 +21,8 @@ import {
   EditOutlined,
 } from '@ant-design/icons';
 import { useAuthStore } from '../store/authStore';
+import type { Organization } from '@exam-maker/shared';
+import { listOrganizations } from '../services/organization';
 
 const { Header, Sider, Content } = AntLayout;
 
@@ -30,6 +32,8 @@ const AppLayout: React.FC = () => {
   const location = useLocation();
   const { user, logout } = useAuthStore();
   const { token: themeToken } = theme.useToken();
+  const [organizations, setOrganizations] = useState<Organization[]>([]);
+  React.useEffect(() => { listOrganizations().then((rows) => { setOrganizations(rows); if (!localStorage.getItem('organizationId') && rows.length) localStorage.setItem('organizationId', String(rows.find(row => row.isDefault)?.id ?? rows[0].id)); }).catch(() => setOrganizations([])); }, [user?.id]);
 
   const menuItems = user?.role === 'student'
     ? [
@@ -153,6 +157,7 @@ const AppLayout: React.FC = () => {
             icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
             onClick={() => setCollapsed(!collapsed)}
           />
+          <div style={{ marginLeft: 'auto', marginRight: 16 }}>{organizations.length > 0 && <Select aria-label="当前组织" style={{ width: 180 }} value={Number(localStorage.getItem('organizationId') ?? organizations.find(row => row.isDefault)?.id ?? organizations[0].id)} options={organizations.map(row => ({ value: row.id, label: row.name }))} onChange={(value) => { localStorage.setItem('organizationId', String(value)); window.location.reload(); }} />}</div>
           <Dropdown menu={{ items: userMenuItems, onClick: handleUserMenu }}>
             <div style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8 }}>
               <Avatar size="small" icon={<UserOutlined />} />

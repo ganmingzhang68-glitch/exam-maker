@@ -7,6 +7,7 @@ import {
 import { db, saveToDisk, schema } from '../db/index.js';
 import { AppError } from '../middleware/errorHandler.js';
 import type { AuthRequest } from '../middleware/auth.js';
+import { canAccessOrganization } from '../middleware/organization.js';
 
 type QuestionRow = typeof schema.questions.$inferSelect;
 
@@ -43,6 +44,7 @@ function getOwnedQuestion(req: AuthRequest, id: number): QuestionRow {
   const question = db.select().from(schema.questions)
     .where(eq(schema.questions.id, id)).get();
   if (!question) throw new AppError(404, '题目不存在');
+  if (!canAccessOrganization(req, question.organizationId)) throw new AppError(403, '无权访问该组织的题目');
   if (req.userRole !== 'admin' && question.createdBy !== req.userId) {
     throw new AppError(403, '无权管理该题目');
   }
@@ -80,6 +82,7 @@ export function listQuestions(req: AuthRequest, res: Response, next: NextFunctio
   try {
     const query = questionListQuerySchema.parse(req.query);
     const conditions = [];
+    if (req.organizationExplicit) conditions.push(eq(schema.questions.organizationId, req.organizationId!));
     if (req.userRole !== 'admin') conditions.push(eq(schema.questions.createdBy, req.userId!));
     if (query.status) conditions.push(eq(schema.questions.status, query.status));
     if (query.type) conditions.push(eq(schema.questions.type, query.type));
@@ -195,6 +198,7 @@ export function createQuestion(req: AuthRequest, res: Response, next: NextFuncti
     assertSourceOwnership(req, data.sourceFileId, data.sourceProjectId);
     const row = db.insert(schema.questions).values({
       createdBy: req.userId!,
+      organizationId: req.organizationId ?? 1,
       courseId: data.courseId ?? null,
       sourceFileId: data.sourceFileId ?? null,
       sourceProjectId: data.sourceProjectId ?? null,

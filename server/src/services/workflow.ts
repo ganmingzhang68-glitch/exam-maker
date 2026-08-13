@@ -99,7 +99,9 @@ function ensureGenerationJob(project: ProjectRow, requestId?: string) {
     ? db.select().from(schema.courses).where(eq(schema.courses.id, project.courseId)).get()
     : db.select().from(schema.courses).where(and(eq(schema.courses.ownerUserId, project.userId), eq(schema.courses.name, project.course))).get();
   if (!course) {
-    course = db.insert(schema.courses).values({ ownerUserId: project.userId, name: project.course,
+    const organizationId = db.select({ organizationId: schema.userOrganizations.organizationId }).from(schema.userOrganizations)
+      .where(and(eq(schema.userOrganizations.userId, project.userId), eq(schema.userOrganizations.isDefault, true))).get()?.organizationId ?? 1;
+    course = db.insert(schema.courses).values({ ownerUserId: project.userId, organizationId, name: project.course,
       status: 'active', instructorName: null }).returning().get();
   }
   if (project.courseId !== course.id) {

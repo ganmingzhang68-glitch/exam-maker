@@ -13,6 +13,7 @@ export interface User {
 }
 
 export interface AdminDashboard { users: { total: number; active: number; teachers: number; students: number; admins: number }; resources: { courses: number; classes: number; exams: number; questions: number }; tasks: { total: number; running: number; failed: number; blocked: number }; ai: { calls: number; inputTokens: number; outputTokens: number; failedRate: number | null; averageLatencyMs: number | null; estimatedCost: number | null; currency: string | null; byModel: Array<{ provider: string; model: string; calls: number; inputTokens: number; outputTokens: number; failedRate: number | null; averageLatencyMs: number | null; estimatedCost: number | null }>; byCourse: Array<{ courseId: number | null; courseName: string; calls: number; totalTokens: number }>; byFeature: Array<{ feature: string; calls: number; totalTokens: number }> }; health: { status: 'ok' | 'degraded'; database: 'ok'; failedTaskCount: number; lastAiRunAt: string | null } }
+export interface Organization { id: number; name: string; code: string; status: 'active' | 'archived'; createdBy: number | null; createdAt: string; updatedAt: string; membershipRole: 'owner' | 'admin' | 'member'; isDefault: boolean; memberCount?: number }
 
 // ============ Project ============
 export type ProjectStatus =
@@ -111,6 +112,7 @@ export type CourseStatus = 'draft' | 'active' | 'archived';
 export interface CourseRecord {
   id: number;
   ownerUserId: number;
+  organizationId: number;
   code: string | null;
   name: string;
   semester: string | null;
@@ -142,6 +144,7 @@ export type EnrollmentStatus = 'active' | 'removed';
 export interface TeachingClass {
   id: number;
   courseId: number;
+  organizationId: number;
   teacherUserId: number;
   name: string;
   semester: string | null;
@@ -226,6 +229,7 @@ export type DifficultyLevel = 'basic' | 'medium' | 'hard';
 export interface Question {
   id: number;
   createdBy: number;
+  organizationId: number;
   courseId: number | null;
   sourceFileId: number | null;
   sourceProjectId: number | null;
@@ -373,6 +377,7 @@ export type PaperStatus = 'draft' | 'ready' | 'archived';
 export interface Paper {
   id: number;
   createdBy: number;
+  organizationId: number;
   courseId: number | null;
   sourceProjectId: number | null;
   title: string;
@@ -412,6 +417,7 @@ export type ExamStatus = 'draft' | 'published' | 'closed';
 export interface Exam {
   id: number;
   paperId: number;
+  organizationId: number;
   createdBy: number;
   title: string;
   status: ExamStatus;

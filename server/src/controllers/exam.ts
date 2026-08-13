@@ -8,6 +8,7 @@ import {
 import { db, saveToDisk, schema } from '../db/index.js';
 import { AppError } from '../middleware/errorHandler.js';
 import type { AuthRequest } from '../middleware/auth.js';
+import { canAccessOrganization } from '../middleware/organization.js';
 import {
   buildPaperSnapshot,
   ensurePaperQuestionSnapshots,
@@ -20,6 +21,7 @@ type ExamRow = typeof schema.exams.$inferSelect;
 function getOwnedExam(req: AuthRequest, id: number): ExamRow {
   const exam = db.select().from(schema.exams).where(eq(schema.exams.id, id)).get();
   if (!exam) throw new AppError(404, '考试不存在');
+  if (!canAccessOrganization(req, exam.organizationId)) throw new AppError(403, '无权访问该组织的考试');
   if (req.userRole !== 'admin' && exam.createdBy !== req.userId) {
     throw new AppError(403, '无权管理该考试');
   }
@@ -55,8 +57,11 @@ function teacherExamSummary(exam: ExamRow) {
 
 export function listTeacherExams(req: AuthRequest, res: Response, next: NextFunction) {
   try {
+    const conditions = [];
+    if (req.userRole !== 'admin') conditions.push(eq(schema.exams.createdBy, req.userId!));
+    if (req.organizationExplicit) conditions.push(eq(schema.exams.organizationId, req.organizationId!));
     const rows = db.select().from(schema.exams)
-      .where(req.userRole === 'admin' ? undefined : eq(schema.exams.createdBy, req.userId!))
+      .where(conditions.length ? and(...conditions) : undefined)
       .orderBy(desc(schema.exams.updatedAt)).all();
     res.json({ success: true, data: rows.map(teacherExamSummary) });
   } catch (error) { next(error); }
@@ -75,6 +80,7 @@ export function createExam(req: AuthRequest, res: Response, next: NextFunction) 
     getOwnedPaper(req, data.paperId);
     const row = db.insert(schema.exams).values({
       paperId: data.paperId,
+      organizationId: getOwnedPaper(req, data.paperId).organizationId,
       createdBy: req.userId!,
       title: data.title,
       status: 'draft',

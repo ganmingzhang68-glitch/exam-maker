@@ -12,6 +12,7 @@ import {
 import { db, rawDb, saveToDisk, schema } from '../db/index.js';
 import { AppError } from '../middleware/errorHandler.js';
 import type { AuthRequest } from '../middleware/auth.js';
+import { canAccessOrganization } from '../middleware/organization.js';
 
 type PaperRow = typeof schema.papers.$inferSelect;
 type QuestionRow = typeof schema.questions.$inferSelect;
@@ -39,6 +40,7 @@ function questionSnapshot(row: QuestionRow): string {
 function getOwnedPaper(req: AuthRequest, id: number): PaperRow {
   const paper = db.select().from(schema.papers).where(eq(schema.papers.id, id)).get();
   if (!paper) throw new AppError(404, '试卷不存在');
+  if (!canAccessOrganization(req, paper.organizationId)) throw new AppError(403, '无权访问该组织的试卷');
   if (req.userRole !== 'admin' && paper.createdBy !== req.userId) {
     throw new AppError(403, '无权管理该试卷');
   }
@@ -138,6 +140,7 @@ export function listPapers(req: AuthRequest, res: Response, next: NextFunction) 
   try {
     const query = paperListQuerySchema.parse(req.query);
     const conditions = [];
+    if (req.organizationExplicit) conditions.push(eq(schema.papers.organizationId, req.organizationId!));
     if (req.userRole !== 'admin') conditions.push(eq(schema.papers.createdBy, req.userId!));
     if (query.status) conditions.push(eq(schema.papers.status, query.status));
     if (query.courseId) conditions.push(eq(schema.papers.courseId, query.courseId));
@@ -165,6 +168,7 @@ export function createPaper(req: AuthRequest, res: Response, next: NextFunction)
     assertCourseOwnership(req, data.courseId);
     const row = db.insert(schema.papers).values({
       createdBy: req.userId!,
+      organizationId: req.organizationId ?? 1,
       courseId: data.courseId ?? null,
       sourceProjectId: data.sourceProjectId ?? null,
       title: data.title,
@@ -214,7 +218,7 @@ export function copyPaper(req: AuthRequest, res: Response, next: NextFunction) {
     const source = getOwnedPaper(req, positiveIdSchema.parse(req.params.id));
     const now = new Date().toISOString();
     const row = db.insert(schema.papers).values({
-      createdBy: req.userId!, courseId: source.courseId, sourceProjectId: null,
+      createdBy: req.userId!, organizationId: source.organizationId, courseId: source.courseId, sourceProjectId: null,
       title: `${source.title}（副本）`, course: source.course, description: source.description,
       instructions: source.instructions, durationMinutes: source.durationMinutes,
       totalScore: source.totalScore, status: 'draft', creationMethod: 'manual', updatedAt: now,
