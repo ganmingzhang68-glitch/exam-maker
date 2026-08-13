@@ -83,6 +83,7 @@ export function gradeObjectiveAnswer(
 export function getQuestionSolution(paperQuestionId: number): {
   answerKey: Record<string, unknown> | null;
   analysis: string | null;
+  scoringRubric: Record<string, unknown> | null;
 } {
   const row = db.select({
     paperQuestion: schema.paperQuestions,
@@ -90,13 +91,16 @@ export function getQuestionSolution(paperQuestionId: number): {
   }).from(schema.paperQuestions)
     .innerJoin(schema.questions, eq(schema.paperQuestions.questionId, schema.questions.id))
     .where(eq(schema.paperQuestions.id, paperQuestionId)).get();
-  if (!row) return { answerKey: null, analysis: null };
+  if (!row) return { answerKey: null, analysis: null, scoringRubric: null };
   const snapshot = parseJson<Record<string, unknown>>(row.paperQuestion.questionSnapshot);
   const answerKey = snapshot?.answerKey && typeof snapshot.answerKey === 'object' && !Array.isArray(snapshot.answerKey)
     ? snapshot.answerKey as Record<string, unknown>
     : parseJson<Record<string, unknown>>(row.question.answerKey);
   const analysis = typeof snapshot?.analysis === 'string' ? snapshot.analysis : row.question.analysis;
-  return { answerKey, analysis };
+  const scoringRubric = snapshot?.scoringRubric && typeof snapshot.scoringRubric === 'object' && !Array.isArray(snapshot.scoringRubric)
+    ? snapshot.scoringRubric as Record<string, unknown>
+    : parseJson<Record<string, unknown>>(row.question.scoringRubric);
+  return { answerKey, analysis, scoringRubric };
 }
 
 export function recalculateAttemptScores(attemptId: number): typeof schema.attempts.$inferSelect {

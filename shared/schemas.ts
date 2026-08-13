@@ -283,4 +283,6 @@ export const saveAnswerSchema = z.object({
 export const manualGradeSchema = z.object({
   score: z.number().min(0).max(1000),
   feedback: z.string().trim().max(10000).nullable().optional(),
+  aiSuggestionId: z.number().int().positive().nullable().optional(),
+  gradingMode: z.enum(['accept_ai', 'modify_ai', 'manual']).default('manual'),
 });

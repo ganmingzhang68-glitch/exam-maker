@@ -13,8 +13,10 @@ import {
 } from '../controllers/exam.js';
 import {
   getTeacherAttemptResult,
+  getAiGradingSuggestion,
   gradeSubjectiveAnswer,
   listExamResults,
+  requestAiGradingSuggestion,
 } from '../controllers/result.js';
 import { getExamAssessment, reviewExamQuestionQuality } from '../controllers/assessment.js';
 
@@ -30,6 +32,8 @@ router.get('/:id/results', requireAuth, requireRole('teacher', 'admin'), listExa
 router.get('/:id/quality', requireAuth, requireRole('teacher', 'admin'), getExamAssessment);
 router.post('/:id/quality/questions/:paperQuestionId/review', requireAuth, requireRole('teacher', 'admin'), reviewExamQuestionQuality);
 router.get('/:id/attempts/:attemptId', requireAuth, requireRole('teacher', 'admin'), getTeacherAttemptResult);
+router.get('/:id/attempts/:attemptId/answers/:answerId/ai-suggestion', requireAuth, requireRole('teacher', 'admin'), getAiGradingSuggestion);
+router.post('/:id/attempts/:attemptId/answers/:answerId/ai-suggestion', requireAuth, requireRole('teacher', 'admin'), requestAiGradingSuggestion);
 router.patch(
   '/:id/attempts/:attemptId/answers/:answerId/grade',
   requireAuth,

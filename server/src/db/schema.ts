@@ -855,3 +855,46 @@ export const courseDifficultyCalibrations = sqliteTable('course_difficulty_calib
 }, (table) => ({
   courseUnique: uniqueIndex('course_difficulty_calibrations_course_unique').on(table.courseId),
 }));
+
+export const aiGradingSuggestions = sqliteTable('ai_grading_suggestions', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  answerId: integer('answer_id').notNull().references(() => answers.id, { onDelete: 'cascade' }),
+  suggestedScore: real('suggested_score'),
+  maxScore: real('max_score').notNull(),
+  rubricItemScores: text('rubric_item_scores').notNull().default('[]'),
+  reasoningSummary: text('reasoning_summary'),
+  missingPoints: text('missing_points').notNull().default('[]'),
+  matchedPoints: text('matched_points').notNull().default('[]'),
+  confidence: real('confidence'),
+  status: text('status', { enum: ['queued', 'running', 'succeeded', 'failed', 'accepted', 'modified', 'superseded'] }).notNull().default('queued'),
+  provider: text('provider'),
+  model: text('model'),
+  promptVersionId: integer('prompt_version_id').references(() => promptVersions.id, { onDelete: 'set null' }),
+  aiRunId: integer('ai_run_id').references(() => aiRuns.id, { onDelete: 'set null' }),
+  errorMessage: text('error_message'),
+  teacherFinalScore: real('teacher_final_score'),
+  scoreDifference: real('score_difference'),
+  reviewedBy: integer('reviewed_by').references(() => users.id, { onDelete: 'set null' }),
+  reviewedAt: text('reviewed_at'),
+  createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
+  updatedAt: text('updated_at').notNull().default(sql`(datetime('now'))`),
+}, (table) => ({
+  answerStatusIdx: index('ai_grading_suggestions_answer_status_idx').on(table.answerId, table.status, table.createdAt),
+  aiRunIdx: index('ai_grading_suggestions_ai_run_idx').on(table.aiRunId),
+}));
+
+export const gradingCalibrations = sqliteTable('grading_calibrations', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  courseId: integer('course_id').notNull().references(() => courses.id, { onDelete: 'cascade' }),
+  sampleSize: integer('sample_size').notNull().default(0),
+  mae: real('mae'),
+  bias: real('bias'),
+  acceptanceRate: real('acceptance_rate'),
+  modificationRate: real('modification_rate'),
+  status: text('status', { enum: ['available', 'insufficient_sample'] }).notNull().default('insufficient_sample'),
+  computedAt: text('computed_at').notNull(),
+  createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
+  updatedAt: text('updated_at').notNull().default(sql`(datetime('now'))`),
+}, (table) => ({
+  courseUnique: uniqueIndex('grading_calibrations_course_unique').on(table.courseId),
+}));

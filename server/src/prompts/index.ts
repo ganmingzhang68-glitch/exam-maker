@@ -11,6 +11,7 @@ export * from './questionGenerationPrompt.js';
 export * from './answerGenerationPrompt.js';
 export * from './rubricGenerationPrompt.js';
 export * from './independentValidationPrompt.js';
+export * from './aiGradingPrompt.js';
 
 import { documentStructurePrompt } from './documentStructurePrompt.js';
 import { questionParsingPrompt } from './questionParsingPrompt.js';
@@ -24,6 +25,7 @@ import { questionGenerationPrompt } from './questionGenerationPrompt.js';
 import { answerGenerationPrompt } from './answerGenerationPrompt.js';
 import { rubricGenerationPrompt } from './rubricGenerationPrompt.js';
 import { independentValidationPrompt } from './independentValidationPrompt.js';
+import { aiGradingPrompt } from './aiGradingPrompt.js';
 
 export const promptCatalog = [
   documentStructurePrompt,
@@ -38,6 +40,7 @@ export const promptCatalog = [
   answerGenerationPrompt,
   rubricGenerationPrompt,
   independentValidationPrompt,
+  aiGradingPrompt,
 ] as const;
 
 export function getPromptDefinition(id: typeof promptCatalog[number]['id']) {

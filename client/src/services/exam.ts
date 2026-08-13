@@ -6,6 +6,7 @@ import type {
   StudentExamSummary,
   StudentAttemptResult,
   TeacherAttemptGradingDetail,
+  AiGradingSuggestion,
   TeacherExamSummary,
   TeacherExamStudentResult,
   ExamAssessment,
@@ -111,11 +112,23 @@ export async function gradeSubjectiveAnswer(
   answerId: number,
   score: number,
   feedback?: string | null,
+  aiSuggestionId?: number | null,
+  gradingMode: 'accept_ai' | 'modify_ai' | 'manual' = 'manual',
 ): Promise<TeacherAttemptGradingDetail> {
   const response = await api.patch<ApiResponse<TeacherAttemptGradingDetail>>(
     `/exams/${examId}/attempts/${attemptId}/answers/${answerId}/grade`,
-    { score, feedback: feedback ?? null },
+    { score, feedback: feedback ?? null, aiSuggestionId: aiSuggestionId ?? null, gradingMode },
   );
+  return response.data.data!;
+}
+
+export async function requestAiGradingSuggestion(examId: number, attemptId: number, answerId: number): Promise<AiGradingSuggestion> {
+  const response = await api.post<ApiResponse<AiGradingSuggestion>>(`/exams/${examId}/attempts/${attemptId}/answers/${answerId}/ai-suggestion`);
+  return response.data.data!;
+}
+
+export async function getAiGradingSuggestion(examId: number, attemptId: number, answerId: number): Promise<AiGradingSuggestion> {
+  const response = await api.get<ApiResponse<AiGradingSuggestion>>(`/exams/${examId}/attempts/${attemptId}/answers/${answerId}/ai-suggestion`);
   return response.data.data!;
 }
 

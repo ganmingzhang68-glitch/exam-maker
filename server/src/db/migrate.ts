@@ -16,6 +16,8 @@ import { paperLibraryV1Migration } from './migrations/013_paper_library_v1.js';
 import { productionJobsMigration } from './migrations/014_production_jobs.js';
 import { questionQualityReportsMigration } from './migrations/015_question_quality_reports.js';
 import { difficultyCalibrationMigration } from './migrations/016_difficulty_calibration.js';
+import { aiGradingSuggestionsMigration } from './migrations/017_ai_grading_suggestions.js';
+import { gradingCalibrationMigration } from './migrations/018_grading_calibration.js';
 
 interface Migration {
   id: string;
@@ -39,6 +41,8 @@ const migrations: Migration[] = [
   productionJobsMigration,
   questionQualityReportsMigration,
   difficultyCalibrationMigration,
+  aiGradingSuggestionsMigration,
+  gradingCalibrationMigration,
 ];
 
 export function runMigrations(database: Database = rawDb): void {

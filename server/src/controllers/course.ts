@@ -10,6 +10,7 @@ import { db, saveToDisk, schema } from '../db/index.js';
 import { AppError } from '../middleware/errorHandler.js';
 import type { AuthRequest } from '../middleware/auth.js';
 import { getCourseDifficultyCalibration as buildCourseDifficultyCalibration } from '../services/difficultyCalibration.js';
+import { getCourseGradingCalibration as buildCourseGradingCalibration } from '../services/gradingCalibration.js';
 
 type CourseRow = typeof schema.courses.$inferSelect;
 
@@ -114,6 +115,14 @@ export function getCourseDifficultyCalibration(req: AuthRequest, res: Response, 
     const id = positiveIdSchema.parse(req.params.id);
     getOwnedCourse(req, id);
     res.json({ success: true, data: buildCourseDifficultyCalibration(id) });
+  } catch (error) { next(error); }
+}
+
+export function getCourseGradingCalibration(req: AuthRequest, res: Response, next: NextFunction) {
+  try {
+    const id = positiveIdSchema.parse(req.params.id);
+    getOwnedCourse(req, id);
+    res.json({ success: true, data: buildCourseGradingCalibration(id) });
   } catch (error) { next(error); }
 }
 

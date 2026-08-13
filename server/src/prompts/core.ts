@@ -14,6 +14,7 @@ export const promptIds = [
   'answer_generation_prompt',
   'rubric_generation_prompt',
   'independent_validation_prompt',
+  'ai_grading_prompt',
 ] as const;
 
 export type PromptId = typeof promptIds[number];
@@ -21,7 +22,7 @@ export type PromptId = typeof promptIds[number];
 export interface PromptDefinition<I extends z.ZodTypeAny, O extends z.ZodTypeAny> {
   id: PromptId;
   version: `${number}.${number}.${number}`;
-  stage: GenerationStage;
+  stage: GenerationStage | 'ai_grading';
   task: string;
   inputSchema: I;
   outputSchema: O;
@@ -39,7 +40,7 @@ export interface PromptDefinition<I extends z.ZodTypeAny, O extends z.ZodTypeAny
 export interface RenderedPrompt<I> {
   id: PromptId;
   version: string;
-  stage: GenerationStage;
+  stage: GenerationStage | 'ai_grading';
   validatedInput: I;
   systemPrompt: string;
   userPrompt: string;

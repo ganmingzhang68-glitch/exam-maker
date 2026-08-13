@@ -16,4 +16,5 @@ export const assessmentConfig = Object.freeze({
   highBlankRate: numberEnv('ASSESSMENT_HIGH_BLANK_RATE', 0.2, 0, 1),
   calibrationTolerance: numberEnv('ASSESSMENT_CALIBRATION_TOLERANCE', 0.1, 0, 1),
   minimumCalibrationRecords: numberEnv('ASSESSMENT_MIN_CALIBRATION_RECORDS', 10, 2, 1000),
+  minimumGradingCalibrationRecords: numberEnv('ASSESSMENT_MIN_GRADING_CALIBRATION_RECORDS', 5, 2, 1000),
 });

@@ -1,4 +1,4 @@
-import type { ApiResponse, CourseDetail, CourseDifficultyCalibration, CourseStatus } from '@exam-maker/shared';
+import type { ApiResponse, CourseDetail, CourseDifficultyCalibration, CourseGradingCalibration, CourseStatus } from '@exam-maker/shared';
 import api from './api';
 
 export interface CourseInput {
@@ -22,6 +22,11 @@ export async function getCourse(id: number): Promise<CourseDetail> {
 
 export async function getCourseDifficultyCalibration(id: number): Promise<CourseDifficultyCalibration> {
   const response = await api.get<ApiResponse<CourseDifficultyCalibration>>(`/courses/${id}/difficulty-calibration`);
+  return response.data.data!;
+}
+
+export async function getCourseGradingCalibration(id: number): Promise<CourseGradingCalibration> {
+  const response = await api.get<ApiResponse<CourseGradingCalibration>>(`/courses/${id}/grading-calibration`);
   return response.data.data!;
 }
 

@@ -671,7 +671,52 @@ export interface GradingQuestionDetail extends AttemptQuestionSnapshot {
   answer: Answer;
   answerKey: Record<string, unknown> | null;
   analysis: string | null;
+  scoringRubric: Record<string, unknown> | null;
   subjective: boolean;
+  aiSuggestion: AiGradingSuggestion | null;
+}
+
+export interface AiGradingSuggestion {
+  id: number;
+  answerId: number;
+  suggestedScore: number | null;
+  maxScore: number;
+  rubricItemScores: Array<{ rubricItemId: string; awardedScore: number; maxScore: number; evidenceSummary: string; matched: string[]; missing: string[] }>;
+  reasoningSummary: string | null;
+  missingPoints: string[];
+  matchedPoints: string[];
+  confidence: number | null;
+  status: 'queued' | 'running' | 'succeeded' | 'failed' | 'accepted' | 'modified' | 'superseded';
+  provider: string | null;
+  model: string | null;
+  promptVersionId: number | null;
+  aiRunId: number | null;
+  errorMessage: string | null;
+  teacherFinalScore: number | null;
+  scoreDifference: number | null;
+  reviewedBy: number | null;
+  reviewedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface GradingCalibrationMetric {
+  key: string;
+  label: string;
+  sampleSize: number;
+  status: 'available' | 'insufficient_sample';
+  mae: number | null;
+  bias: number | null;
+  acceptanceRate: number | null;
+  modificationRate: number | null;
+}
+
+export interface CourseGradingCalibration extends GradingCalibrationMetric {
+  courseId: number;
+  minimumSampleSize: number;
+  computedAt: string;
+  byQuestionType: GradingCalibrationMetric[];
+  byRubric: GradingCalibrationMetric[];
 }
 
 export interface TeacherAttemptGradingDetail {

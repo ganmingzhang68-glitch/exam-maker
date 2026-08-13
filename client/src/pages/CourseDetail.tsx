@@ -2,8 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Alert, Button, Card, Col, Descriptions, Empty, Row, Space, Spin, Statistic, Table, Tabs, Tag, Typography, message } from 'antd';
 import { ArrowLeftOutlined, BookOutlined, CalendarOutlined, DatabaseOutlined, FileDoneOutlined, SolutionOutlined, TeamOutlined } from '@ant-design/icons';
-import type { CourseDetail as CourseDetailType, CourseDifficultyCalibration, DifficultyCalibrationRecord } from '@exam-maker/shared';
-import { getCourse, getCourseDifficultyCalibration } from '../services/course';
+import type { CourseDetail as CourseDetailType, CourseDifficultyCalibration, CourseGradingCalibration, DifficultyCalibrationRecord, GradingCalibrationMetric } from '@exam-maker/shared';
+import { getCourse, getCourseDifficultyCalibration, getCourseGradingCalibration } from '../services/course';
 
 const { Title, Text } = Typography;
 const statusLabel = { draft: '草稿', active: '进行中', archived: '已归档' } as const;
@@ -16,6 +16,8 @@ const CourseDetail: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [calibration, setCalibration] = useState<CourseDifficultyCalibration | null>(null);
   const [calibrationLoading, setCalibrationLoading] = useState(false);
+  const [gradingCalibration, setGradingCalibration] = useState<CourseGradingCalibration | null>(null);
+  const [gradingCalibrationLoading, setGradingCalibrationLoading] = useState(false);
 
   useEffect(() => {
     if (!Number.isInteger(courseId) || courseId <= 0) { navigate('/courses', { replace: true }); return; }
@@ -36,6 +38,7 @@ const CourseDetail: React.FC = () => {
     finally { setCalibrationLoading(false); }
   };
   const percent = (value: number | null) => value === null ? '—' : value.toFixed(2);
+  const rate = (value: number | null) => value === null ? '—' : `${(value * 100).toFixed(1)}%`;
   const calibrationView = <Spin spinning={calibrationLoading}><Space direction="vertical" size="middle" style={{ width: '100%' }}>
     {calibration && <>
       {calibration.status === 'insufficient_sample' && <Alert type="info" showIcon message="当前课程数据不足，暂不进行自动校准" description={`已有 ${calibration.sampleSize} 条有效预测对照，至少需要 ${calibration.minimumSampleSize} 条。题目级历史仍会保留。`} />}
@@ -52,6 +55,29 @@ const CourseDetail: React.FC = () => {
         { title: '实际难度', dataIndex: 'empiricalDifficulty', render: percent },
         { title: '样本', dataIndex: 'sampleSize' },
         { title: '结论', dataIndex: 'calibrationLabel', render: (value: DifficultyCalibrationRecord['calibrationLabel']) => ({ ai_underestimated: 'AI低估难度', ai_overestimated: 'AI高估难度', aligned: '基本准确', unavailable: '缺少AI预测' }[value]) },
+      ]} />
+    </>}
+  </Space></Spin>;
+  const loadGradingCalibration = async () => {
+    if (gradingCalibration || gradingCalibrationLoading) return;
+    setGradingCalibrationLoading(true);
+    try { setGradingCalibration(await getCourseGradingCalibration(courseId)); }
+    catch (error) { message.error((error as { response?: { data?: { error?: string } } })?.response?.data?.error ?? '加载 AI 批改校准失败'); }
+    finally { setGradingCalibrationLoading(false); }
+  };
+  const gradingCalibrationView = <Spin spinning={gradingCalibrationLoading}><Space direction="vertical" size="middle" style={{ width: '100%' }}>
+    {gradingCalibration && <>
+      {gradingCalibration.status === 'insufficient_sample' && <Alert type="info" showIcon message="AI 批改确认数据不足" description={`已有 ${gradingCalibration.sampleSize} 条教师实际处置记录，至少需要 ${gradingCalibration.minimumSampleSize} 条后才报告汇总指标。`} />}
+      <Row gutter={16}>
+        <Col span={6}><Statistic title="教师处置样本" value={gradingCalibration.sampleSize} /></Col>
+        <Col span={6}><Statistic title="MAE" value={percent(gradingCalibration.mae)} /></Col>
+        <Col span={6}><Statistic title="AI偏差 (AI-教师)" value={percent(gradingCalibration.bias)} /></Col>
+        <Col span={6}><Statistic title="教师接受率" value={rate(gradingCalibration.acceptanceRate)} /></Col>
+      </Row>
+      <Table<GradingCalibrationMetric> rowKey="key" size="small" pagination={false} dataSource={gradingCalibration.byQuestionType} columns={[
+        { title: '题型', dataIndex: 'label' }, { title: '样本', dataIndex: 'sampleSize' },
+        { title: 'MAE', dataIndex: 'mae', render: percent }, { title: '偏差', dataIndex: 'bias', render: percent },
+        { title: '接受率', dataIndex: 'acceptanceRate', render: rate }, { title: '修改率', dataIndex: 'modificationRate', render: rate },
       ]} />
     </>}
   </Space></Spin>;
@@ -75,7 +101,7 @@ const CourseDetail: React.FC = () => {
         <Col xs={12} md={8} xl={4}><Card><Statistic title="已批改作答" value={summary.gradedAttemptCount} /></Card></Col>
       </Row>
       <Card>
-        <Tabs onChange={(key) => { if (key === 'difficulty') void loadCalibration(); }} items={[
+        <Tabs onChange={(key) => { if (key === 'difficulty') void loadCalibration(); if (key === 'grading-calibration') void loadGradingCalibration(); }} items={[
           { key: 'overview', label: '课程概览', children: <Descriptions column={1} bordered items={[{ key: 'teacher', label: '授课教师', children: course.instructorName || '未设置' }, { key: 'semester', label: '学期', children: course.semester || '未设置' }, { key: 'description', label: '课程说明', children: course.description || '暂无说明' }]} /> },
           { key: 'classes', label: '班级', children: placeholder('班级', <Button onClick={() => navigate(`/classes?courseId=${course.id}`)}>查看课程班级</Button>) },
           { key: 'materials', label: '资料', children: placeholder('课程资料', <Button onClick={() => navigate('/projects/new')}>导入真题资料</Button>) },
@@ -85,6 +111,7 @@ const CourseDetail: React.FC = () => {
           { key: 'grades', label: '成绩', children: placeholder('课程成绩') },
           { key: 'ai', label: 'AI 命题', children: placeholder('AI 命题', <Button type="primary" onClick={() => navigate('/projects/new')}>创建出卷项目</Button>) },
           { key: 'difficulty', label: 'AI 难度校准', children: calibrationView },
+          { key: 'grading-calibration', label: 'AI 批改校准', children: gradingCalibrationView },
           { key: 'settings', label: '设置', children: placeholder('课程设置') },
         ]} />
       </Card>
