@@ -18,6 +18,10 @@ function displayAnswer(value: AnswerContent | null): string {
   return JSON.stringify(value, null, 2);
 }
 
+function displayStructuredValue(value: unknown): string {
+  return value === null || value === undefined ? '未设置' : JSON.stringify(value, null, 2);
+}
+
 const StudentResult: React.FC = () => {
   const { id } = useParams();
   const attemptId = Number(id);
@@ -68,7 +72,7 @@ const StudentResult: React.FC = () => {
             {question.answer.feedback && <Alert type="info" showIcon message={`教师评语：${question.answer.feedback}`} style={{ marginBottom: 12 }} />}
             {'answerKey' in question && (
               <Card size="small" type="inner" title="标准答案" style={{ marginTop: 12 }}>
-                <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{JSON.stringify(question.answerKey, null, 2) || '未设置'}</pre>
+                <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{displayStructuredValue(question.answerKey)}</pre>
               </Card>
             )}
             {'analysis' in question && question.analysis && (

@@ -19,6 +19,9 @@ test('class enrollment workflow keeps user identity normalized and enforces owne
     { id: 3, username: 'student_one', email: 'one@class.test', passwordHash: 'x', role: 'student' },
     { id: 4, username: 'student_two', email: 'two@class.test', passwordHash: 'x', role: 'student' },
   ]).run();
+  db.insert(schema.userOrganizations).values([1, 2, 3, 4].map(userId => ({
+    userId, organizationId: 1, role: 'member' as const, isDefault: true,
+  }))).run();
   db.insert(schema.courses).values({ id: 1, ownerUserId: 1, name: '数据结构', status: 'active' }).run();
   db.insert(schema.courses).values({ id: 2, ownerUserId: 2, name: '其他课程', status: 'active' }).run();
 

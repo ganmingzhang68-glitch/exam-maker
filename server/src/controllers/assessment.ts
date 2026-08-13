@@ -4,12 +4,14 @@ import { positiveIdSchema, reviewQuestionQualitySchema } from '@exam-maker/share
 import { db, schema } from '../db/index.js';
 import type { AuthRequest } from '../middleware/auth.js';
 import { AppError } from '../middleware/errorHandler.js';
+import { canAccessOrganization } from '../middleware/organization.js';
 import { buildExamAssessment } from '../services/examAssessment.js';
 import { reviewQuestionQuality, syncQuestionQualityReports } from '../services/questionQualityReport.js';
 
 function ownedExam(req: AuthRequest, id: number) {
   const exam = db.select().from(schema.exams).where(eq(schema.exams.id, id)).get();
   if (!exam) throw new AppError(404, '考试不存在');
+  if (!canAccessOrganization(req, exam.organizationId)) throw new AppError(403, '无权访问该组织的考试质量分析');
   if (req.userRole !== 'admin' && exam.createdBy !== req.userId) throw new AppError(403, '无权查看该考试质量分析');
   return exam;
 }

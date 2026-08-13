@@ -36,10 +36,16 @@ export function createGradeReview(studentId: number, input: { attemptId: number;
   db.insert(schema.gradeAuditLogs).values({ gradeReviewId: review.id, actorUserId: studentId, action: 'requested', afterJson: JSON.stringify({ reason: input.reason, evidence: input.evidence ?? null }), reason: input.reason }).run();
   saveToDisk(); return serialize(review);
 }
-export function listStudentGradeReviews(studentId: number) { return db.select().from(schema.gradeReviews).where(eq(schema.gradeReviews.studentId, studentId)).orderBy(desc(schema.gradeReviews.createdAt)).all().map(serialize); }
-export function listTeacherGradeReviews(teacherId: number, role: 'teacher' | 'admin', examId?: number) {
+export function listStudentGradeReviews(studentId: number, organizationId?: number) {
+  return db.select({ review: schema.gradeReviews }).from(schema.gradeReviews)
+    .innerJoin(schema.exams, eq(schema.gradeReviews.examId, schema.exams.id))
+    .where(and(eq(schema.gradeReviews.studentId, studentId), organizationId ? eq(schema.exams.organizationId, organizationId) : undefined))
+    .orderBy(desc(schema.gradeReviews.createdAt)).all().map(row => serialize(row.review));
+}
+export function listTeacherGradeReviews(teacherId: number, role: 'teacher' | 'admin', examId?: number, organizationId?: number) {
   const rows = db.select({ review: schema.gradeReviews, exam: schema.exams }).from(schema.gradeReviews).innerJoin(schema.exams, eq(schema.gradeReviews.examId, schema.exams.id))
-    .where(examId ? eq(schema.gradeReviews.examId, examId) : undefined).orderBy(desc(schema.gradeReviews.createdAt)).all();
+    .where(and(examId ? eq(schema.gradeReviews.examId, examId) : undefined,
+      organizationId ? eq(schema.exams.organizationId, organizationId) : undefined)).orderBy(desc(schema.gradeReviews.createdAt)).all();
   return rows.filter(row => role === 'admin' || row.exam.createdBy === teacherId).map(row => serialize(row.review));
 }
 export function resolveGradeReview(actorId: number, role: 'teacher' | 'admin', reviewId: number, input: { decision: 'accepted' | 'rejected'; resolution: string; adjustedScore?: number | null }): GradeReview {

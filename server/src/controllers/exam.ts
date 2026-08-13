@@ -31,6 +31,7 @@ function getOwnedExam(req: AuthRequest, id: number): ExamRow {
 function getOwnedPaper(req: AuthRequest, id: number) {
   const paper = db.select().from(schema.papers).where(eq(schema.papers.id, id)).get();
   if (!paper) throw new AppError(404, '试卷不存在');
+  if (!canAccessOrganization(req, paper.organizationId)) throw new AppError(403, '无权访问该组织的试卷');
   if (req.userRole !== 'admin' && paper.createdBy !== req.userId) {
     throw new AppError(403, '无权使用该试卷');
   }
@@ -59,7 +60,7 @@ export function listTeacherExams(req: AuthRequest, res: Response, next: NextFunc
   try {
     const conditions = [];
     if (req.userRole !== 'admin') conditions.push(eq(schema.exams.createdBy, req.userId!));
-    if (req.organizationExplicit) conditions.push(eq(schema.exams.organizationId, req.organizationId!));
+    if (req.organizationId && (req.userRole !== 'admin' || req.organizationExplicit)) conditions.push(eq(schema.exams.organizationId, req.organizationId));
     const rows = db.select().from(schema.exams)
       .where(conditions.length ? and(...conditions) : undefined)
       .orderBy(desc(schema.exams.updatedAt)).all();
@@ -77,10 +78,10 @@ export function getTeacherExam(req: AuthRequest, res: Response, next: NextFuncti
 export function createExam(req: AuthRequest, res: Response, next: NextFunction) {
   try {
     const data = createExamSchema.parse(req.body);
-    getOwnedPaper(req, data.paperId);
+    const paper = getOwnedPaper(req, data.paperId);
     const row = db.insert(schema.exams).values({
       paperId: data.paperId,
-      organizationId: getOwnedPaper(req, data.paperId).organizationId,
+      organizationId: paper.organizationId,
       createdBy: req.userId!,
       title: data.title,
       status: 'draft',
@@ -118,7 +119,8 @@ export function updateExam(req: AuthRequest, res: Response, next: NextFunction) 
       gradeReviewEnabled: changes.gradeReviewEnabled ?? exam.gradeReviewEnabled,
       gradeReviewDeadline: changes.gradeReviewDeadline === undefined ? exam.gradeReviewDeadline : changes.gradeReviewDeadline,
     });
-    getOwnedPaper(req, merged.paperId);
+    const paper = getOwnedPaper(req, merged.paperId);
+    if (paper.organizationId !== exam.organizationId) throw new AppError(400, '不能把其他组织的试卷用于当前考试');
     const row = db.update(schema.exams).set({
       ...changes,
       updatedAt: new Date().toISOString(),
@@ -145,8 +147,10 @@ export function publishExam(req: AuthRequest, res: Response, next: NextFunction)
     ensurePaperQuestionSnapshots(exam.paperId);
     buildPaperSnapshot(exam.paperId);
 
-    const students = db.select({ id: schema.users.id }).from(schema.users)
-      .where(eq(schema.users.role, 'student')).all();
+    const students = db.selectDistinct({ id: schema.users.id }).from(schema.users)
+      .innerJoin(schema.userOrganizations, eq(schema.userOrganizations.userId, schema.users.id))
+      .where(and(eq(schema.users.role, 'student'), eq(schema.users.isActive, true),
+        eq(schema.userOrganizations.organizationId, exam.organizationId))).all();
     for (const student of students) {
       const existing = db.select({ id: schema.examAssignments.id }).from(schema.examAssignments).where(and(
         eq(schema.examAssignments.examId, exam.id),
@@ -193,7 +197,7 @@ export function closeExam(req: AuthRequest, res: Response, next: NextFunction) {
 
 export function listStudentExams(req: AuthRequest, res: Response, next: NextFunction) {
   try {
-    const result = getStudentExamSummaries(req.userId!);
+    const result = getStudentExamSummaries(req.userId!, Date.now(), req.organizationId);
     if (result.changed) saveToDisk();
     res.json({ success: true, data: result.data });
   } catch (error) { next(error); }
@@ -204,6 +208,7 @@ export function startExam(req: AuthRequest, res: Response, next: NextFunction) {
     const examId = positiveIdSchema.parse(req.params.id);
     const exam = db.select().from(schema.exams).where(eq(schema.exams.id, examId)).get();
     if (!exam || exam.status !== 'published') throw new AppError(404, '考试不存在或未发布');
+    if (!canAccessOrganization(req, exam.organizationId)) throw new AppError(403, '无权访问该组织的考试');
     const assignment = db.select().from(schema.examAssignments).where(and(
       eq(schema.examAssignments.examId, examId),
       eq(schema.examAssignments.studentId, req.userId!),
@@ -259,6 +264,7 @@ export function getStudentExamQuestions(req: AuthRequest, res: Response, next: N
     const examId = positiveIdSchema.parse(req.params.id);
     const exam = db.select().from(schema.exams).where(eq(schema.exams.id, examId)).get();
     if (!exam) throw new AppError(404, '考试不存在');
+    if (!canAccessOrganization(req, exam.organizationId)) throw new AppError(403, '无权访问该组织的考试');
     let attempt = db.select().from(schema.attempts).where(and(
       eq(schema.attempts.examId, examId),
       eq(schema.attempts.studentId, req.userId!),

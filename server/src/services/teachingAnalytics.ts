@@ -10,20 +10,27 @@ const ATTENTION_RULES = [
   'persistent_weakness: 至少 2 个知识点处于 weak 状态',
 ];
 function ratio(numerator: number, denominator: number) { return denominator > 0 ? numerator / denominator : null; }
+function parseArray(value: string | null): unknown[] {
+  if (!value) return [];
+  try { const parsed = JSON.parse(value) as unknown; return Array.isArray(parsed) ? parsed : []; } catch { return []; }
+}
 
 export function generateTeachingAnalytics(courseId: number, generatedBy: number): TeachingAnalytics {
   const course = db.select().from(schema.courses).where(eq(schema.courses.id, courseId)).get()!;
   const students = db.select({ user: schema.users }).from(schema.enrollments)
     .innerJoin(schema.teachingClasses, eq(schema.enrollments.classId, schema.teachingClasses.id))
     .innerJoin(schema.users, eq(schema.enrollments.studentId, schema.users.id))
-    .where(and(eq(schema.teachingClasses.courseId, courseId), eq(schema.enrollments.status, 'active'))).all()
+    .where(and(eq(schema.teachingClasses.courseId, courseId), eq(schema.teachingClasses.status, 'active'),
+      eq(schema.enrollments.status, 'active'), eq(schema.users.isActive, true))).all()
     .map(row => row.user).filter((user, index, all) => all.findIndex(item => item.id === user.id) === index);
   const paperRows = db.select().from(schema.papers).where(eq(schema.papers.courseId, courseId)).all();
   const paperIds = paperRows.map(paper => paper.id);
   const examRows = paperIds.length ? db.select().from(schema.exams).where(inArray(schema.exams.paperId, paperIds)).all() : [];
   const published = examRows.filter(exam => exam.status === 'published' || exam.status === 'closed');
   const examIds = published.map(exam => exam.id);
-  const assignments = examIds.length ? db.select().from(schema.examAssignments).where(inArray(schema.examAssignments.examId, examIds)).all() : [];
+  const activeStudentIds = new Set(students.map(student => student.id));
+  const assignments = (examIds.length ? db.select().from(schema.examAssignments).where(inArray(schema.examAssignments.examId, examIds)).all() : [])
+    .filter(item => activeStudentIds.has(item.studentId));
   const assignmentIds = assignments.map(item => item.id);
   const attempts = assignmentIds.length ? db.select().from(schema.attempts).where(inArray(schema.attempts.assignmentId, assignmentIds)).all()
     .filter(item => item.status === 'submitted' || item.status === 'grading' || item.status === 'graded') : [];
@@ -31,6 +38,7 @@ export function generateTeachingAnalytics(courseId: number, generatedBy: number)
   const totalByPaper = new Map(paperRows.map(paper => [paper.id, paper.totalScore]));
   const paperByExam = new Map(examRows.map(exam => [exam.id, exam.paperId]));
   const rates = graded.map(item => ({ ...item, rate: ratio(item.totalScore, totalByPaper.get(paperByExam.get(item.examId)!) ?? 0) }));
+  const validRates = rates.filter(item => item.rate !== null);
   const knowledge = getTeacherCourseKnowledgeAnalytics(courseId);
   const practice = db.select().from(schema.practiceSessions).where(and(eq(schema.practiceSessions.courseId, courseId), eq(schema.practiceSessions.status, 'completed'))).all();
   const quality = examIds.length ? db.select().from(schema.questionQualityReports).where(inArray(schema.questionQualityReports.examId, examIds)).all() : [];
@@ -52,10 +60,10 @@ export function generateTeachingAnalytics(courseId: number, generatedBy: number)
   const summary: TeachingAnalytics['summary'] = {
     enrolledStudentCount: students.length, publishedExamCount: published.length, assignmentCount: assignments.length,
     gradedAttemptCount: graded.length, participationRate: ratio(new Set(attempts.map(item => item.assignmentId)).size, assignments.length),
-    averageScoreRate: rates.length ? rates.reduce((sum, item) => sum + (item.rate ?? 0), 0) / rates.length : null,
+    averageScoreRate: validRates.length ? validRates.reduce((sum, item) => sum + item.rate!, 0) / validRates.length : null,
     completedPracticeCount: practice.length,
     averagePracticeScoreRate: practice.length ? practice.reduce((sum, item) => sum + (ratio(item.scoreEarned, item.scorePossible) ?? 0), 0) / practice.length : null,
-    lowQualityQuestionCount: quality.filter(item => JSON.parse(item.qualityFlags || '[]').length > 0).length,
+    lowQualityQuestionCount: quality.filter(item => parseArray(item.qualityFlags).length > 0).length,
     pendingQuestionReviewCount: questions.filter(item => item.lifecycleStatus === 'needs_review' || item.status === 'generated').length,
     weakKnowledgePoints: knowledge.items.filter(item => item.weakStudentCount > 0).sort((a, b) => b.weakStudentCount - a.weakStudentCount)
       .map(item => ({ knowledgePointId: item.knowledgePointId, name: item.knowledgePointName, averageScoreRate: item.averageScoreRate, weakStudentCount: item.weakStudentCount })),
@@ -73,7 +81,13 @@ export function getLatestTeachingAnalytics(courseId: number, generatedBy: number
   const snapshot = db.select().from(schema.teachingAnalyticsSnapshots).where(eq(schema.teachingAnalyticsSnapshots.courseId, courseId))
     .orderBy(desc(schema.teachingAnalyticsSnapshots.createdAt), desc(schema.teachingAnalyticsSnapshots.id)).limit(1).get();
   if (!snapshot) return generateTeachingAnalytics(courseId, generatedBy);
-  return { id: snapshot.id, courseId, courseName: course.name, generatedAt: snapshot.createdAt,
-    calculationVersion: snapshot.calculationVersion, summary: JSON.parse(snapshot.summaryJson),
-    attentionStudents: JSON.parse(snapshot.attentionJson), rules: ATTENTION_RULES };
+  try {
+    return { id: snapshot.id, courseId, courseName: course.name, generatedAt: snapshot.createdAt,
+      calculationVersion: snapshot.calculationVersion, summary: JSON.parse(snapshot.summaryJson),
+      attentionStudents: JSON.parse(snapshot.attentionJson), rules: ATTENTION_RULES };
+  } catch {
+    db.update(schema.teachingAnalyticsSnapshots).set({ status: 'failed', errorMessage: '快照 JSON 损坏', updatedAt: new Date().toISOString() })
+      .where(eq(schema.teachingAnalyticsSnapshots.id, snapshot.id)).run();
+    return generateTeachingAnalytics(courseId, generatedBy);
+  }
 }

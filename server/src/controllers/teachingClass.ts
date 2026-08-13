@@ -98,7 +98,7 @@ export function listTeachingClasses(req: AuthRequest, res: Response, next: NextF
   try {
     const query = teachingClassListQuerySchema.parse(req.query);
     const conditions = [];
-    if (req.organizationExplicit) conditions.push(eq(schema.teachingClasses.organizationId, req.organizationId!));
+    if (req.organizationId && (req.userRole !== 'admin' || req.organizationExplicit)) conditions.push(eq(schema.teachingClasses.organizationId, req.organizationId));
     if (req.userRole !== 'admin') conditions.push(eq(schema.teachingClasses.teacherUserId, req.userId!));
     if (query.courseId) conditions.push(eq(schema.teachingClasses.courseId, query.courseId));
     if (query.status) conditions.push(eq(schema.teachingClasses.status, query.status));
@@ -171,15 +171,17 @@ export function archiveTeachingClass(req: AuthRequest, res: Response, next: Next
 export function searchStudents(req: AuthRequest, res: Response, next: NextFunction) {
   try {
     const classId = positiveIdSchema.parse(req.params.id);
-    getOwnedClass(req, classId);
+    const classRow = getOwnedClass(req, classId);
     const query = studentSearchQuerySchema.parse(req.query);
     const conditions = [eq(schema.users.role, 'student')];
     if (query.q) {
       const pattern = `%${query.q}%`;
       conditions.push(or(like(schema.users.username, pattern), like(schema.users.email, pattern))!);
     }
-    const students = db.select({ id: schema.users.id, username: schema.users.username, email: schema.users.email })
-      .from(schema.users).where(and(...conditions)).orderBy(schema.users.username).limit(query.limit).all();
+    const students = db.selectDistinct({ id: schema.users.id, username: schema.users.username, email: schema.users.email })
+      .from(schema.users).innerJoin(schema.userOrganizations, eq(schema.userOrganizations.userId, schema.users.id))
+      .where(and(...conditions, eq(schema.userOrganizations.organizationId, classRow.organizationId)))
+      .orderBy(schema.users.username).limit(query.limit).all();
     const enrollmentRows = db.select().from(schema.enrollments).where(eq(schema.enrollments.classId, classId)).all();
     const statusByStudent = new Map(enrollmentRows.map((row) => [row.studentId, row.status]));
     res.json({ success: true, data: students.map((student) => ({ ...student, enrollmentStatus: statusByStudent.get(student.id) ?? null })) });
@@ -187,8 +189,11 @@ export function searchStudents(req: AuthRequest, res: Response, next: NextFuncti
 }
 
 function addStudents(classRow: ClassRow, studentIds: number[]) {
-  const users = db.select({ id: schema.users.id, role: schema.users.role }).from(schema.users).all();
-  const students = new Set(users.filter((user) => user.role === 'student').map((user) => user.id));
+  const users = db.selectDistinct({ id: schema.users.id }).from(schema.users)
+    .innerJoin(schema.userOrganizations, eq(schema.userOrganizations.userId, schema.users.id))
+    .where(and(eq(schema.users.role, 'student'), eq(schema.users.isActive, true),
+      eq(schema.userOrganizations.organizationId, classRow.organizationId))).all();
+  const students = new Set(users.map((user) => user.id));
   if (studentIds.some((id) => !students.has(id))) throw new AppError(400, '学生列表包含不存在或非学生账号');
   const existing = db.select().from(schema.enrollments).where(eq(schema.enrollments.classId, classRow.id)).all();
   const byStudent = new Map(existing.map((row) => [row.studentId, row]));
@@ -230,8 +235,10 @@ export function importEnrollments(req: AuthRequest, res: Response, next: NextFun
     const classRow = getOwnedClass(req, positiveIdSchema.parse(req.params.id));
     if (classRow.status === 'archived') throw new AppError(409, '已归档班级不能导入学生');
     const data = importEnrollmentsSchema.parse(req.body);
-    const allStudents = db.select({ id: schema.users.id, username: schema.users.username, email: schema.users.email })
-      .from(schema.users).where(eq(schema.users.role, 'student')).all();
+    const allStudents = db.selectDistinct({ id: schema.users.id, username: schema.users.username, email: schema.users.email })
+      .from(schema.users).innerJoin(schema.userOrganizations, eq(schema.userOrganizations.userId, schema.users.id))
+      .where(and(eq(schema.users.role, 'student'), eq(schema.users.isActive, true),
+        eq(schema.userOrganizations.organizationId, classRow.organizationId))).all();
     const lookup = new Map<string, number>();
     allStudents.forEach((student) => { lookup.set(student.username.toLowerCase(), student.id); lookup.set(student.email.toLowerCase(), student.id); });
     const matched = new Set<number>();

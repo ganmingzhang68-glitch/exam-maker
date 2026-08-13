@@ -1,5 +1,5 @@
 import type { StudentExamAvailability, StudentExamDisplayStatus, StudentExamSummary } from '@exam-maker/shared';
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, inArray } from 'drizzle-orm';
 import { db, schema } from '../db/index.js';
 import { serializeAttempt } from './attemptSnapshot.js';
 import { gradeAttempt } from './grading.js';
@@ -36,23 +36,26 @@ export function displayStatus(exam: ExamRow, latest: AttemptRow | null, now = Da
   return 'available';
 }
 
-export function getStudentExamSummaries(studentId: number, now = Date.now()): { data: StudentExamSummary[]; changed: boolean } {
+export function getStudentExamSummaries(studentId: number, now = Date.now(), organizationId?: number): { data: StudentExamSummary[]; changed: boolean } {
   const assignments = db.select({ assignment: schema.examAssignments, exam: schema.exams, paper: schema.papers })
     .from(schema.examAssignments)
     .innerJoin(schema.exams, eq(schema.examAssignments.examId, schema.exams.id))
     .innerJoin(schema.papers, eq(schema.exams.paperId, schema.papers.id))
-    .where(eq(schema.examAssignments.studentId, studentId))
+    .where(and(eq(schema.examAssignments.studentId, studentId), organizationId ? eq(schema.exams.organizationId, organizationId) : undefined))
     .orderBy(desc(schema.exams.startAt)).all();
+  const examIds = assignments.map(({ exam }) => exam.id);
+  let allAttempts = examIds.length ? db.select().from(schema.attempts).where(and(
+    eq(schema.attempts.studentId, studentId), inArray(schema.attempts.examId, examIds),
+  )).orderBy(desc(schema.attempts.attemptNo)).all() : [];
   let changed = false;
   const data = assignments.map(({ exam, paper }): StudentExamSummary => {
-    let attempts = db.select().from(schema.attempts).where(and(
-      eq(schema.attempts.examId, exam.id), eq(schema.attempts.studentId, studentId),
-    )).orderBy(desc(schema.attempts.attemptNo)).all();
+    let attempts = allAttempts.filter(attempt => attempt.examId === exam.id);
     if (settleExpiredAttempts(exam, attempts, now)) {
       changed = true;
-      attempts = db.select().from(schema.attempts).where(and(
-        eq(schema.attempts.examId, exam.id), eq(schema.attempts.studentId, studentId),
+      allAttempts = db.select().from(schema.attempts).where(and(
+        eq(schema.attempts.studentId, studentId), inArray(schema.attempts.examId, examIds),
       )).orderBy(desc(schema.attempts.attemptNo)).all();
+      attempts = allAttempts.filter(attempt => attempt.examId === exam.id);
     }
     const latest = attempts[0] ?? null;
     const computed = displayStatus(exam, latest, now);

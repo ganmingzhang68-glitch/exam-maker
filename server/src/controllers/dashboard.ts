@@ -9,29 +9,36 @@ function scalar(row: { value: number } | undefined): number { return Number(row?
 export function getTeacherDashboard(req: AuthRequest, res: Response, next: NextFunction) {
   try {
     const ownerId = req.userId!;
+    const organizationId = req.organizationId;
     const now = new Date();
     const weekStart = new Date(now);
     weekStart.setDate(now.getDate() - 7);
     const activeCourseCount = scalar(db.select({ value: count() }).from(schema.courses)
-      .where(and(eq(schema.courses.ownerUserId, ownerId), eq(schema.courses.status, 'active'))).get());
+      .where(and(eq(schema.courses.ownerUserId, ownerId), eq(schema.courses.status, 'active'),
+        organizationId ? eq(schema.courses.organizationId, organizationId) : undefined)).get());
     const activeClassCount = scalar(db.select({ value: count() }).from(schema.teachingClasses)
-      .where(and(eq(schema.teachingClasses.teacherUserId, ownerId), eq(schema.teachingClasses.status, 'active'))).get());
+      .where(and(eq(schema.teachingClasses.teacherUserId, ownerId), eq(schema.teachingClasses.status, 'active'),
+        organizationId ? eq(schema.teachingClasses.organizationId, organizationId) : undefined)).get());
     const ongoingExamCount = scalar(db.select({ value: count() }).from(schema.exams)
       .where(and(
         eq(schema.exams.createdBy, ownerId), eq(schema.exams.status, 'published'),
+        organizationId ? eq(schema.exams.organizationId, organizationId) : undefined,
         or(isNull(schema.exams.startAt), lte(schema.exams.startAt, now.toISOString())),
         or(isNull(schema.exams.endAt), gt(schema.exams.endAt, now.toISOString())),
       )).get());
     const pendingGradingCount = scalar(db.select({ value: count() }).from(schema.attempts)
       .innerJoin(schema.exams, eq(schema.attempts.examId, schema.exams.id))
-      .where(and(eq(schema.exams.createdBy, ownerId), eq(schema.attempts.status, 'grading'))).get());
+      .where(and(eq(schema.exams.createdBy, ownerId), eq(schema.attempts.status, 'grading'),
+        organizationId ? eq(schema.exams.organizationId, organizationId) : undefined)).get());
     const weeklySubmissionCount = scalar(db.select({ value: count() }).from(schema.attempts)
       .innerJoin(schema.exams, eq(schema.attempts.examId, schema.exams.id))
-      .where(and(eq(schema.exams.createdBy, ownerId), gte(schema.attempts.submittedAt, weekStart.toISOString()))).get());
+      .where(and(eq(schema.exams.createdBy, ownerId), gte(schema.attempts.submittedAt, weekStart.toISOString()),
+        organizationId ? eq(schema.exams.organizationId, organizationId) : undefined)).get());
 
     const examRows = db.select({ exam: schema.exams, paper: schema.papers }).from(schema.exams)
       .innerJoin(schema.papers, eq(schema.exams.paperId, schema.papers.id))
-      .where(eq(schema.exams.createdBy, ownerId)).orderBy(desc(schema.exams.updatedAt)).limit(8).all();
+      .where(and(eq(schema.exams.createdBy, ownerId), organizationId ? eq(schema.exams.organizationId, organizationId) : undefined))
+      .orderBy(desc(schema.exams.updatedAt)).limit(8).all();
     const recentExams = examRows.map(({ exam, paper }) => {
       const assignments = scalar(db.select({ value: count() }).from(schema.examAssignments)
         .where(eq(schema.examAssignments.examId, exam.id)).get());
@@ -51,7 +58,8 @@ export function getTeacherDashboard(req: AuthRequest, res: Response, next: NextF
     const recentPapers = db.select({
       id: schema.papers.id, title: schema.papers.title, course: schema.papers.course,
       status: schema.papers.status, updatedAt: schema.papers.updatedAt,
-    }).from(schema.papers).where(eq(schema.papers.createdBy, ownerId))
+    }).from(schema.papers).where(and(eq(schema.papers.createdBy, ownerId),
+      organizationId ? eq(schema.papers.organizationId, organizationId) : undefined))
       .orderBy(desc(schema.papers.updatedAt)).limit(6).all();
     const failedProjects = db.select({ id: schema.projects.id, title: schema.projects.title })
       .from(schema.projects).where(and(eq(schema.projects.userId, ownerId), eq(schema.projects.status, 'error')))
@@ -74,7 +82,7 @@ export function getTeacherDashboard(req: AuthRequest, res: Response, next: NextF
 export function getStudentDashboard(req: AuthRequest, res: Response, next: NextFunction) {
   try {
     const studentId = req.userId!;
-    const result = getStudentExamSummaries(studentId);
+    const result = getStudentExamSummaries(studentId, Date.now(), req.organizationId);
     if (result.changed) saveToDisk();
     const courses = db.select({
       id: schema.courses.id, name: schema.courses.name, classId: schema.teachingClasses.id,
@@ -84,13 +92,14 @@ export function getStudentDashboard(req: AuthRequest, res: Response, next: NextF
       .innerJoin(schema.courses, eq(schema.teachingClasses.courseId, schema.courses.id))
       .where(and(
         eq(schema.enrollments.studentId, studentId), eq(schema.enrollments.status, 'active'),
-        eq(schema.teachingClasses.status, 'active'),
+        eq(schema.teachingClasses.status, 'active'), req.organizationId ? eq(schema.courses.organizationId, req.organizationId) : undefined,
       )).orderBy(schema.courses.name).all();
     const recentScores = db.select({ attempt: schema.attempts, exam: schema.exams, paper: schema.papers })
       .from(schema.attempts)
       .innerJoin(schema.exams, eq(schema.attempts.examId, schema.exams.id))
       .innerJoin(schema.papers, eq(schema.exams.paperId, schema.papers.id))
-      .where(and(eq(schema.attempts.studentId, studentId), eq(schema.attempts.status, 'graded')))
+      .where(and(eq(schema.attempts.studentId, studentId), eq(schema.attempts.status, 'graded'),
+        req.organizationId ? eq(schema.exams.organizationId, req.organizationId) : undefined))
       .orderBy(desc(schema.attempts.gradedAt), desc(schema.attempts.updatedAt)).limit(5).all()
       .map(({ attempt, exam, paper }) => ({
         examId: exam.id, examTitle: exam.title, attemptId: attempt.id,

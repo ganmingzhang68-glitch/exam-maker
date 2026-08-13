@@ -30,6 +30,9 @@ test('E2E teacher publishes an exam and student completes one immutable attempt'
     { id: 3, username: 'other_student', email: 'other.student@test.local', passwordHash, role: 'student' },
     { id: 4, username: 'other_teacher', email: 'other.teacher@test.local', passwordHash, role: 'teacher' },
   ]).run();
+  db.insert(schema.userOrganizations).values([1, 2, 3, 4].map(userId => ({
+    userId, organizationId: 1, role: 'member' as const, isDefault: true,
+  }))).run();
 
   const app = express();
   app.use(express.json());

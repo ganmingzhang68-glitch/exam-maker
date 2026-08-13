@@ -7,11 +7,16 @@ import type { AuthRequest } from '../middleware/auth.js';
 import { getAttemptDetail, parsePaperSnapshot } from '../services/attemptSnapshot.js';
 import { gradeAttempt } from '../services/grading.js';
 import { settleExpiredAttempts } from '../services/examStatus.js';
+import { canAccessOrganization } from '../middleware/organization.js';
 
 function getStudentAttempt(req: AuthRequest, id: number) {
   const attempt = db.select().from(schema.attempts).where(eq(schema.attempts.id, id)).get();
   if (!attempt) throw new AppError(404, '作答记录不存在');
   if (attempt.studentId !== req.userId) throw new AppError(403, '无权访问该作答记录');
+  const exam = db.select({ organizationId: schema.exams.organizationId }).from(schema.exams)
+    .where(eq(schema.exams.id, attempt.examId)).get();
+  if (!exam) throw new AppError(404, '考试不存在');
+  if (!canAccessOrganization(req, exam.organizationId)) throw new AppError(403, '无权访问该组织的作答记录');
   return attempt;
 }
 

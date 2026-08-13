@@ -4,6 +4,7 @@ import { manualGradeSchema, positiveIdSchema } from '@exam-maker/shared';
 import { db, saveToDisk, schema } from '../db/index.js';
 import { AppError } from '../middleware/errorHandler.js';
 import type { AuthRequest } from '../middleware/auth.js';
+import { canAccessOrganization } from '../middleware/organization.js';
 import { getAttemptDetail, parsePaperSnapshot, serializeAttempt } from '../services/attemptSnapshot.js';
 import {
   getQuestionSolution,
@@ -16,6 +17,7 @@ import { latestAiGradingSuggestion, queueAiGradingSuggestion, runAiGradingSugges
 function getOwnedExam(req: AuthRequest, examId: number) {
   const exam = db.select().from(schema.exams).where(eq(schema.exams.id, examId)).get();
   if (!exam) throw new AppError(404, '考试不存在');
+  if (!canAccessOrganization(req, exam.organizationId)) throw new AppError(403, '无权访问该组织的考试成绩');
   if (req.userRole !== 'admin' && exam.createdBy !== req.userId) {
     throw new AppError(403, '无权查看该考试成绩');
   }
@@ -82,13 +84,15 @@ export function listExamResults(req: AuthRequest, res: Response, next: NextFunct
       .innerJoin(schema.users, eq(schema.examAssignments.studentId, schema.users.id))
       .where(eq(schema.examAssignments.examId, examId))
       .all();
+    const attempts = db.select().from(schema.attempts).where(eq(schema.attempts.examId, examId))
+      .orderBy(desc(schema.attempts.attemptNo)).all();
+    const attemptsByStudent = new Map<number, typeof attempts>();
+    attempts.forEach(attempt => attemptsByStudent.set(attempt.studentId,
+      [...(attemptsByStudent.get(attempt.studentId) ?? []), attempt]));
     const data = assignments.map(({ assignment, student }) => ({
       assignmentId: assignment.id,
       student,
-      attempts: db.select().from(schema.attempts).where(and(
-        eq(schema.attempts.examId, examId),
-        eq(schema.attempts.studentId, student.id),
-      )).orderBy(desc(schema.attempts.attemptNo)).all().map(serializeAttempt),
+      attempts: (attemptsByStudent.get(student.id) ?? []).map(serializeAttempt),
     }));
     res.json({ success: true, data });
   } catch (error) { next(error); }
@@ -198,6 +202,7 @@ export function getStudentAttemptResult(req: AuthRequest, res: Response, next: N
     if (attempt.status === 'submitted') attempt = gradeAttempt(attempt.id);
     const exam = db.select().from(schema.exams).where(eq(schema.exams.id, attempt.examId)).get();
     if (!exam) throw new AppError(404, '考试不存在');
+    if (!canAccessOrganization(req, exam.organizationId)) throw new AppError(403, '无权访问该组织的考试成绩');
     const detail = getAttemptDetail(attempt.id);
     const answerByQuestion = new Map(detail.answers.map((answer) => [answer.paperQuestionId, answer]));
     const questions = detail.questions.map((question) => {

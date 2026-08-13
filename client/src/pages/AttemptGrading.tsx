@@ -32,6 +32,10 @@ function displayAnswer(value: AnswerContent | null): string {
   return JSON.stringify(value, null, 2);
 }
 
+function displayStructuredValue(value: unknown): string {
+  return value === null || value === undefined ? '未设置' : JSON.stringify(value, null, 2);
+}
+
 const AttemptGrading: React.FC = () => {
   const { id, attemptId: attemptIdParam } = useParams();
   const examId = Number(id);
@@ -145,7 +149,7 @@ const AttemptGrading: React.FC = () => {
                 <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{displayAnswer(question.answer.content)}</pre>
               </Card>
               <Card size="small" type="inner" title="标准答案" style={{ marginBottom: 12 }}>
-                <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{JSON.stringify(question.answerKey, null, 2) || '未设置'}</pre>
+                <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{displayStructuredValue(question.answerKey)}</pre>
                 {question.analysis && <Paragraph type="secondary" style={{ marginTop: 8, marginBottom: 0 }}>解析：{question.analysis}</Paragraph>}
               </Card>
               {question.subjective && <Card size="small" type="inner" title="逐项评分标准" style={{ marginBottom: 12 }}>

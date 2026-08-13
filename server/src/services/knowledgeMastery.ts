@@ -129,11 +129,12 @@ export function syncStudentCourseMastery(studentId: number, courseId: number): S
     parentKnowledgePointId: pointById.get(row.knowledgePointId)!.parentId, timeSpentSeconds: null }));
 }
 
-export function getStudentLearningOverview(studentId: number): StudentLearningOverview {
+export function getStudentLearningOverview(studentId: number, organizationId?: number): StudentLearningOverview {
   const courses = db.select({ course: schema.courses }).from(schema.enrollments)
     .innerJoin(schema.teachingClasses, eq(schema.enrollments.classId, schema.teachingClasses.id))
     .innerJoin(schema.courses, eq(schema.teachingClasses.courseId, schema.courses.id))
-    .where(and(eq(schema.enrollments.studentId, studentId), eq(schema.enrollments.status, 'active'))).all();
+    .where(and(eq(schema.enrollments.studentId, studentId), eq(schema.enrollments.status, 'active'),
+      eq(schema.teachingClasses.status, 'active'), organizationId ? eq(schema.courses.organizationId, organizationId) : undefined)).all();
   const unique = [...new Map(courses.map(({ course }) => [course.id, course])).values()];
   return { configuration: { minimumQuestions: assessmentConfig.masteryMinimumQuestions,
     halfLifeDays: assessmentConfig.masteryHalfLifeDays, recentDays: assessmentConfig.masteryRecentDays },
@@ -145,7 +146,8 @@ export function getTeacherCourseKnowledgeAnalytics(courseId: number): TeacherCou
   const course = db.select().from(schema.courses).where(eq(schema.courses.id, courseId)).get()!;
   const students = db.select({ id: schema.enrollments.studentId }).from(schema.enrollments)
     .innerJoin(schema.teachingClasses, eq(schema.enrollments.classId, schema.teachingClasses.id))
-    .where(and(eq(schema.teachingClasses.courseId, courseId), eq(schema.enrollments.status, 'active'))).all();
+    .where(and(eq(schema.teachingClasses.courseId, courseId), eq(schema.teachingClasses.status, 'active'),
+      eq(schema.enrollments.status, 'active'))).all();
   const studentIds = [...new Set(students.map(item => item.id))];
   studentIds.forEach(studentId => syncStudentCourseMastery(studentId, courseId));
   const points = db.select().from(schema.knowledgePoints).where(eq(schema.knowledgePoints.courseId, courseId)).all()

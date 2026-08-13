@@ -25,7 +25,7 @@ export function authMiddleware(req: AuthRequest, _res: Response, next: NextFunct
   const authHeader = req.headers.authorization;
   if (authHeader && authHeader.startsWith('Bearer ')) {
     token = authHeader.slice(7);
-  } else if (typeof req.query.token === 'string') {
+  } else if (typeof req.query.token === 'string' && /^\/api\/projects\/\d+\/(?:events|download\/\d+)$/.test(req.path)) {
     token = req.query.token;
   }
 

@@ -41,7 +41,11 @@ test('practice creates a bank-backed plan, exposes shortages, grades answers and
     assert.equal(created.body.data.plan.shortages[0].code, 'QUESTION_BANK_SHORTAGE');
     assert.equal('answerKey' in created.body.data.questions[0], false, 'answer must not leak before completion');
     const sessionId = created.body.data.id;
-    for (const item of created.body.data.questions) {
+    const firstItem = created.body.data.questions[0];
+    assert.equal((await call(`/sessions/${sessionId}/items/${firstItem.id}`, student, 'PUT', { content: 'A', timeSpentSeconds: 5 })).status, 200);
+    const overwritten = await call(`/sessions/${sessionId}/items/${firstItem.id}`, student, 'PUT', { content: 'B', timeSpentSeconds: 1 });
+    assert.equal(overwritten.status, 409, 'a graded practice item must be immutable');
+    for (const item of created.body.data.questions.slice(1)) {
       const answer = await call(`/sessions/${sessionId}/items/${item.id}`, student, 'PUT', { content: 'A', timeSpentSeconds: 5 });
       assert.equal(answer.status, 200);
     }

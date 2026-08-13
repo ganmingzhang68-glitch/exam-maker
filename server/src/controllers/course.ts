@@ -88,7 +88,7 @@ export function listCourses(req: AuthRequest, res: Response, next: NextFunction)
   try {
     const query = courseListQuerySchema.parse(req.query);
     const conditions = [];
-    if (req.organizationExplicit) conditions.push(eq(schema.courses.organizationId, req.organizationId!));
+    if (req.organizationId && (req.userRole !== 'admin' || req.organizationExplicit)) conditions.push(eq(schema.courses.organizationId, req.organizationId));
     if (req.userRole !== 'admin') conditions.push(eq(schema.courses.ownerUserId, req.userId!));
     if (query.status) conditions.push(eq(schema.courses.status, query.status));
     if (query.search) {

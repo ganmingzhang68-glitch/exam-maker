@@ -130,17 +130,18 @@ function paperSummary(paper: PaperRow) {
   return { ...paper, questionCount: questions.length, usageCount, estimatedDifficulty, displayStatus: usageCount ? 'used' : paper.status };
 }
 
-function assertCourseOwnership(req: AuthRequest, courseId: number | null | undefined): void {
-  if (!courseId || req.userRole === 'admin') return;
-  const course = db.select().from(schema.courses).where(and(eq(schema.courses.id, courseId), eq(schema.courses.ownerUserId, req.userId!))).get();
-  if (!course) throw new AppError(400, '课程不存在或无权访问');
+function assertCourseOwnership(req: AuthRequest, courseId: number | null | undefined, organizationId: number): void {
+  if (!courseId) return;
+  const course = db.select().from(schema.courses).where(eq(schema.courses.id, courseId)).get();
+  if (!course || course.organizationId !== organizationId || !canAccessOrganization(req, course.organizationId)
+    || (req.userRole !== 'admin' && course.ownerUserId !== req.userId)) throw new AppError(400, '课程不存在、跨组织或无权访问');
 }
 
 export function listPapers(req: AuthRequest, res: Response, next: NextFunction) {
   try {
     const query = paperListQuerySchema.parse(req.query);
     const conditions = [];
-    if (req.organizationExplicit) conditions.push(eq(schema.papers.organizationId, req.organizationId!));
+    if (req.organizationId && (req.userRole !== 'admin' || req.organizationExplicit)) conditions.push(eq(schema.papers.organizationId, req.organizationId));
     if (req.userRole !== 'admin') conditions.push(eq(schema.papers.createdBy, req.userId!));
     if (query.status) conditions.push(eq(schema.papers.status, query.status));
     if (query.courseId) conditions.push(eq(schema.papers.courseId, query.courseId));
@@ -165,7 +166,7 @@ export function createPaper(req: AuthRequest, res: Response, next: NextFunction)
   try {
     const data = createPaperSchema.parse(req.body);
     assertSourceProjectOwnership(req, data.sourceProjectId);
-    assertCourseOwnership(req, data.courseId);
+    assertCourseOwnership(req, data.courseId, req.organizationId ?? 1);
     const row = db.insert(schema.papers).values({
       createdBy: req.userId!,
       organizationId: req.organizationId ?? 1,
@@ -192,7 +193,7 @@ export function updatePaper(req: AuthRequest, res: Response, next: NextFunction)
     assertPaperMutable(paper);
     const data = updatePaperSchema.parse(req.body);
     assertSourceProjectOwnership(req, data.sourceProjectId);
-    assertCourseOwnership(req, data.courseId);
+    assertCourseOwnership(req, data.courseId, paper.organizationId);
     const row = db.update(schema.papers).set({
       ...data,
       updatedAt: new Date().toISOString(),
@@ -241,6 +242,9 @@ export function addPaperQuestion(req: AuthRequest, res: Response, next: NextFunc
     const question = db.select().from(schema.questions)
       .where(eq(schema.questions.id, data.questionId)).get();
     if (!question) throw new AppError(404, '题目不存在');
+    if (question.organizationId !== paper.organizationId || !canAccessOrganization(req, question.organizationId)) {
+      throw new AppError(400, '不能把其他组织的题目加入当前试卷');
+    }
     if (req.userRole !== 'admin' && question.createdBy !== req.userId) {
       throw new AppError(403, '无权使用该题目');
     }

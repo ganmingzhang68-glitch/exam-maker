@@ -82,7 +82,7 @@ export function listQuestions(req: AuthRequest, res: Response, next: NextFunctio
   try {
     const query = questionListQuerySchema.parse(req.query);
     const conditions = [];
-    if (req.organizationExplicit) conditions.push(eq(schema.questions.organizationId, req.organizationId!));
+    if (req.organizationId && (req.userRole !== 'admin' || req.organizationExplicit)) conditions.push(eq(schema.questions.organizationId, req.organizationId));
     if (req.userRole !== 'admin') conditions.push(eq(schema.questions.createdBy, req.userId!));
     if (query.status) conditions.push(eq(schema.questions.status, query.status));
     if (query.type) conditions.push(eq(schema.questions.type, query.type));
@@ -323,7 +323,8 @@ export function bulkQuestionAction(req: AuthRequest, res: Response, next: NextFu
   try {
     const data = bulkQuestionActionSchema.parse(req.body);
     const rows = db.select().from(schema.questions).where(inArray(schema.questions.id, data.questionIds)).all();
-    if (rows.length !== data.questionIds.length || rows.some((row) => req.userRole !== 'admin' && row.createdBy !== req.userId)) throw new AppError(403, '批量操作包含无权访问的题目');
+    if (rows.length !== data.questionIds.length || rows.some((row) => !canAccessOrganization(req, row.organizationId)
+      || (req.userRole !== 'admin' && row.createdBy !== req.userId))) throw new AppError(403, '批量操作包含无权访问的题目');
     rows.forEach((row) => saveVersion(row, req.userId!, data.action === 'archive' ? '批量归档' : '批量批准'));
     db.update(schema.questions).set({
       lifecycleStatus: data.action === 'archive' ? 'archived' : 'approved',

@@ -21,11 +21,12 @@ function pointIdsForQuestion(question: QuestionRow, points: Array<typeof schema.
   }).map(point => point.id);
 }
 
-function canAccessCourse(studentId: number, courseId: number): boolean {
+function canAccessCourse(studentId: number, courseId: number, organizationId?: number): boolean {
   return Boolean(db.select({ id: schema.enrollments.id }).from(schema.enrollments)
     .innerJoin(schema.teachingClasses, eq(schema.enrollments.classId, schema.teachingClasses.id))
     .where(and(eq(schema.enrollments.studentId, studentId), eq(schema.enrollments.status, 'active'),
-      eq(schema.teachingClasses.courseId, courseId), eq(schema.teachingClasses.status, 'active'))).limit(1).get());
+      eq(schema.teachingClasses.courseId, courseId), eq(schema.teachingClasses.status, 'active'),
+      organizationId ? eq(schema.teachingClasses.organizationId, organizationId) : undefined)).limit(1).get());
 }
 
 function wrongQuestionIds(studentId: number, courseId: number): Set<number> {
@@ -48,8 +49,8 @@ export interface CreatePracticeInput {
   difficulty?: 'basic' | 'medium' | 'hard' | null;
 }
 
-export function createPracticeSession(studentId: number, input: CreatePracticeInput): PracticeSession {
-  if (!canAccessCourse(studentId, input.courseId)) throw new AppError(403, '尚未加入该课程，不能创建练习');
+export function createPracticeSession(studentId: number, input: CreatePracticeInput, organizationId?: number): PracticeSession {
+  if (!canAccessCourse(studentId, input.courseId, organizationId)) throw new AppError(403, '尚未加入该课程，不能创建练习');
   const course = db.select().from(schema.courses).where(eq(schema.courses.id, input.courseId)).get();
   if (!course) throw new AppError(404, '课程不存在');
   const points = db.select().from(schema.knowledgePoints).where(eq(schema.knowledgePoints.courseId, input.courseId)).all()
@@ -96,20 +97,22 @@ export function createPracticeSession(studentId: number, input: CreatePracticeIn
     questionSnapshot: JSON.stringify({ stem: question.stem, type: question.type, options: parseJson<string[] | null>(question.options, null),
       difficulty: question.difficulty, answerKey: parseJson<Record<string, unknown> | null>(question.answerKey, null), analysis: question.analysis }) }).run());
   saveToDisk();
-  return getPracticeSession(studentId, inserted.id);
+  return getPracticeSession(studentId, inserted.id, organizationId);
 }
 
-export function listPracticeSessions(studentId: number): PracticeSession[] {
+export function listPracticeSessions(studentId: number, organizationId?: number): PracticeSession[] {
   return db.select({ session: schema.practiceSessions, courseName: schema.courses.name }).from(schema.practiceSessions)
     .innerJoin(schema.courses, eq(schema.practiceSessions.courseId, schema.courses.id))
-    .where(eq(schema.practiceSessions.studentId, studentId)).orderBy(desc(schema.practiceSessions.createdAt)).all()
+    .where(and(eq(schema.practiceSessions.studentId, studentId),
+      organizationId ? eq(schema.courses.organizationId, organizationId) : undefined)).orderBy(desc(schema.practiceSessions.createdAt)).all()
     .map(({ session, courseName }) => ({ ...session, courseName }));
 }
 
-export function getPracticeSession(studentId: number, sessionId: number): PracticeSession {
+export function getPracticeSession(studentId: number, sessionId: number, organizationId?: number): PracticeSession {
   const row = db.select({ session: schema.practiceSessions, courseName: schema.courses.name }).from(schema.practiceSessions)
     .innerJoin(schema.courses, eq(schema.practiceSessions.courseId, schema.courses.id))
-    .where(and(eq(schema.practiceSessions.id, sessionId), eq(schema.practiceSessions.studentId, studentId))).get();
+    .where(and(eq(schema.practiceSessions.id, sessionId), eq(schema.practiceSessions.studentId, studentId),
+      organizationId ? eq(schema.courses.organizationId, organizationId) : undefined)).get();
   if (!row) throw new AppError(404, '练习不存在');
   const planRow = db.select().from(schema.practicePlans).where(eq(schema.practicePlans.sessionId, sessionId)).get();
   const points = db.select().from(schema.knowledgePoints).where(eq(schema.knowledgePoints.courseId, row.session.courseId)).all();
@@ -131,11 +134,12 @@ export function getPracticeSession(studentId: number, sessionId: number): Practi
     questionIds: parseJson(planRow.questionIds, []), shortages: parseJson(planRow.shortages, []) } : undefined, questions };
 }
 
-export function submitPracticeAnswer(studentId: number, sessionId: number, itemId: number, content: AnswerContent | null, timeSpentSeconds?: number | null): PracticeSession {
-  const session = getPracticeSession(studentId, sessionId);
+export function submitPracticeAnswer(studentId: number, sessionId: number, itemId: number, content: AnswerContent | null, timeSpentSeconds?: number | null, organizationId?: number): PracticeSession {
+  const session = getPracticeSession(studentId, sessionId, organizationId);
   if (session.status !== 'in_progress') throw new AppError(409, '当前练习不能继续作答');
   const item = db.select().from(schema.practiceAttempts).where(and(eq(schema.practiceAttempts.id, itemId), eq(schema.practiceAttempts.sessionId, sessionId))).get();
   if (!item) throw new AppError(404, '练习题不存在');
+  if (item.status === 'graded') throw new AppError(409, '该练习题已经提交，不能重复修改答案');
   const snapshot = parseJson<{ type: QuestionType; answerKey: Record<string, unknown> | null }>(item.questionSnapshot, { type: 'single_choice', answerKey: null });
   const result = gradeObjectiveAnswer(snapshot.type, content, snapshot.answerKey, item.maxScore);
   const now = new Date().toISOString();
@@ -148,14 +152,15 @@ export function submitPracticeAnswer(studentId: number, sessionId: number, itemI
     .where(eq(schema.practiceSessions.id, sessionId)).run();
   if (finished) syncStudentCourseMastery(studentId, session.courseId);
   saveToDisk();
-  return getPracticeSession(studentId, sessionId);
+  return getPracticeSession(studentId, sessionId, organizationId);
 }
 
-export function getPracticeOptions(studentId: number) {
+export function getPracticeOptions(studentId: number, organizationId?: number) {
   const courses = db.select({ course: schema.courses }).from(schema.enrollments)
     .innerJoin(schema.teachingClasses, eq(schema.enrollments.classId, schema.teachingClasses.id))
     .innerJoin(schema.courses, eq(schema.teachingClasses.courseId, schema.courses.id))
-    .where(and(eq(schema.enrollments.studentId, studentId), eq(schema.enrollments.status, 'active'), eq(schema.teachingClasses.status, 'active'))).all();
+    .where(and(eq(schema.enrollments.studentId, studentId), eq(schema.enrollments.status, 'active'), eq(schema.teachingClasses.status, 'active'),
+      organizationId ? eq(schema.courses.organizationId, organizationId) : undefined)).all();
   return { courses: [...new Map(courses.map(({ course }) => [course.id, course])).values()].map(course => {
     const mastery = syncStudentCourseMastery(studentId, course.id);
     const levels = new Map(mastery.map(item => [item.knowledgePointId, item.masteryLevel]));

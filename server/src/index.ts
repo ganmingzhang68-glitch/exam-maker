@@ -38,7 +38,8 @@ const PORT = process.env.PORT || 3001;
 
 // Global middleware
 app.use(cors({ origin: 'http://localhost:5173', credentials: true }));
-app.use(morgan('dev'));
+morgan.token('safe-url', (req) => (req.url ?? '').replace(/([?&]token=)[^&]*/g, '$1[REDACTED]'));
+app.use(morgan(':method :safe-url :status :response-time ms - :res[content-length]'));
 app.use(express.json());
 app.use(requestIdMiddleware);
 app.use(authMiddleware);
