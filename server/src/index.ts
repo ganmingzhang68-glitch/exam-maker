@@ -25,6 +25,7 @@ import { resumeSimilarQuestionJobs } from './services/similarQuestionPipeline.js
 import { requestIdMiddleware } from './middleware/requestId.js';
 import taskRoutes from './routes/task.js';
 import learningRoutes from './routes/learning.js';
+import { resumeAiGradingSuggestions } from './services/aiGrading.js';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -63,6 +64,7 @@ async function start() {
   await initDb();
   runMigrations();
   resumeSimilarQuestionJobs();
+  resumeAiGradingSuggestions();
 
   app.listen(PORT, () => {
     console.log(`🚀 Server running at http://localhost:${PORT}`);

@@ -125,3 +125,17 @@ export async function runAiGradingSuggestion(suggestionId: number, options: Prom
     saveToDisk(); return serializeAiGradingSuggestion(updated);
   }
 }
+
+export function resumeAiGradingSuggestions(schedule: (id: number) => void = id => {
+  setTimeout(() => { void runAiGradingSuggestion(id); }, 0);
+}): number {
+  const now = new Date().toISOString();
+  db.update(schema.aiGradingSuggestions).set({ status: 'queued',
+    errorMessage: '服务重启后从持久化队列恢复', updatedAt: now })
+    .where(eq(schema.aiGradingSuggestions.status, 'running')).run();
+  const queued = db.select({ id: schema.aiGradingSuggestions.id }).from(schema.aiGradingSuggestions)
+    .where(eq(schema.aiGradingSuggestions.status, 'queued')).all();
+  if (queued.length) saveToDisk();
+  queued.forEach(item => schedule(item.id));
+  return queued.length;
+}

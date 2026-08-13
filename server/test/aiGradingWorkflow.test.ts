@@ -8,7 +8,7 @@ import { runMigrations } from '../src/db/migrate.js';
 import { authMiddleware, generateToken } from '../src/middleware/auth.js';
 import { errorHandler } from '../src/middleware/errorHandler.js';
 import examRoutes from '../src/routes/exam.js';
-import { queueAiGradingSuggestion, runAiGradingSuggestion } from '../src/services/aiGrading.js';
+import { queueAiGradingSuggestion, resumeAiGradingSuggestions, runAiGradingSuggestion } from '../src/services/aiGrading.js';
 import { calculateGradingCalibration } from '../src/services/gradingCalibration.js';
 
 test('grading calibration suppresses small samples and computes real teacher differences', () => {
@@ -84,5 +84,10 @@ test('AI suggestion remains advisory until an authorized teacher accepts it', as
     assert.equal(accepted.body.data?.attempt.totalScore, 7);
     assert.equal(db.select().from(schema.aiGradingSuggestions).get()?.status, 'accepted');
     assert.equal(db.select().from(schema.answers).get()?.gradedBy, 1);
+    db.update(schema.aiGradingSuggestions).set({ status: 'running' }).where(eq(schema.aiGradingSuggestions.id, completed.id)).run();
+    const scheduled: number[] = [];
+    assert.equal(resumeAiGradingSuggestions(id => scheduled.push(id)), 1);
+    assert.deepEqual(scheduled, [completed.id]);
+    assert.equal(db.select().from(schema.aiGradingSuggestions).get()?.status, 'queued');
   } finally { await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())); }
 });

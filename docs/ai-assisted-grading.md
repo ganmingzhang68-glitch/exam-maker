@@ -31,6 +31,7 @@ queued → running → succeeded → accepted | modified
 - `PATCH /api/exams/:examId/attempts/:attemptId/answers/:answerId/grade`：新增 `gradingMode` 与 `aiSuggestionId`，最终决定仍由教师提交。
 
 当前生成过程使用持久化建议状态和 `AiRun` 失败记录。运行中的供应商请求不能被强制中断；失败不会改动学生成绩。
+Server 启动时会把上次进程中断留下的 `running` 建议恢复为 `queued` 并重新执行；已成功或已由教师处置的建议不会重复运行。
 
 ## 批改质量反馈
 
