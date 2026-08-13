@@ -13,7 +13,8 @@
     "db:migrate": "tsx src/db/runMigrations.ts",
     "db:seed": "tsx src/seed.ts",
     "questions:import-generated": "tsx src/scripts/importGeneratedQuestions.ts"
-    ,"question-generation:e2e": "tsx src/scripts/runQuestionGenerationE2E.ts"
+    ,"question-generation:e2e": "tsx src/scripts/runQuestionGenerationE2E.ts",
+    "load-test:phase11": "tsx src/scripts/runPhase11LoadTest.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.30.0",

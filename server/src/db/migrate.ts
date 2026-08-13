@@ -24,6 +24,7 @@ import { teachingAnalyticsMigration } from './migrations/021_teaching_analytics.
 import { gradeReviewsMigration } from './migrations/022_grade_reviews.js';
 import { adminConsoleMigration } from './migrations/023_admin_console.js';
 import { organizationsMigration } from './migrations/024_organizations.js';
+import { performanceIndexesMigration } from './migrations/025_performance_indexes.js';
 
 interface Migration {
   id: string;
@@ -55,6 +56,7 @@ const migrations: Migration[] = [
   gradeReviewsMigration,
   adminConsoleMigration,
   organizationsMigration,
+  performanceIndexesMigration,
 ];
 
 export function runMigrations(database: Database = rawDb): void {

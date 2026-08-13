@@ -19,6 +19,7 @@ import {
   requestAiGradingSuggestion,
 } from '../controllers/result.js';
 import { getExamAssessment, reviewExamQuestionQuality } from '../controllers/assessment.js';
+import { aiGradingRateLimit } from '../middleware/rateLimit.js';
 
 const router = Router();
 
@@ -33,7 +34,7 @@ router.get('/:id/quality', requireAuth, requireRole('teacher', 'admin'), getExam
 router.post('/:id/quality/questions/:paperQuestionId/review', requireAuth, requireRole('teacher', 'admin'), reviewExamQuestionQuality);
 router.get('/:id/attempts/:attemptId', requireAuth, requireRole('teacher', 'admin'), getTeacherAttemptResult);
 router.get('/:id/attempts/:attemptId/answers/:answerId/ai-suggestion', requireAuth, requireRole('teacher', 'admin'), getAiGradingSuggestion);
-router.post('/:id/attempts/:attemptId/answers/:answerId/ai-suggestion', requireAuth, requireRole('teacher', 'admin'), requestAiGradingSuggestion);
+router.post('/:id/attempts/:attemptId/answers/:answerId/ai-suggestion', requireAuth, requireRole('teacher', 'admin'), aiGradingRateLimit, requestAiGradingSuggestion);
 router.patch(
   '/:id/attempts/:attemptId/answers/:answerId/grade',
   requireAuth,
