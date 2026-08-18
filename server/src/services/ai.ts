@@ -8,6 +8,7 @@ function getProvider() { return (process.env.AI_PROVIDER || 'openai').toLowerCas
 function getBaseUrl() { return process.env.AI_BASE_URL || 'https://api.openai.com/v1'; }
 function getModel() { return process.env.AI_MODEL || 'gpt-4o-mini'; }
 function getMaxTokens() { return Number(process.env.AI_MAX_TOKENS) || 4096; }
+function getTimeoutMs() { return Number(process.env.AI_TIMEOUT_MS) || 180000; }
 
 // ====== Interfaces ======
 export interface AiMessage {
@@ -87,6 +88,8 @@ async function sendOpenAI(
     ...messages.filter(m => m.role !== 'system'),
   ];
 
+  const timeoutMs = getTimeoutMs();
+  const deepSeekStructuredMode = provider === 'deepseek';
   const response = await fetch(url, {
     method: 'POST',
     headers: {
@@ -98,7 +101,16 @@ async function sendOpenAI(
       messages: chatMessages,
       max_tokens: options?.maxTokens || getMaxTokens(),
       temperature: 0.7,
+      // DeepSeek V4 defaults to thinking mode. Structured generation can spend
+      // the complete max_tokens budget on reasoning_content and return an empty
+      // final content. These calls all expect one JSON object, so use the faster
+      // non-thinking mode and the provider's supported JSON response contract.
+      ...(deepSeekStructuredMode ? {
+        thinking: { type: 'disabled' },
+        response_format: { type: 'json_object' },
+      } : {}),
     }),
+    signal: AbortSignal.timeout(timeoutMs),
   });
 
   if (!response.ok) {
@@ -107,8 +119,16 @@ async function sendOpenAI(
   }
 
   const data = await response.json() as {
-    choices: Array<{ message: { content: string } }>;
+    choices: Array<{
+      finish_reason?: string | null;
+      message: { content?: string | null; reasoning_content?: string | null };
+    }>;
   };
-
-  return data.choices?.[0]?.message?.content || '';
+  const choice = data.choices?.[0];
+  const content = choice?.message?.content?.trim();
+  if (!content) {
+    const reasoningOnly = Boolean(choice?.message?.reasoning_content?.trim());
+    throw new Error(`AI returned empty final content (finish_reason=${choice?.finish_reason ?? 'unknown'}, reasoning_only=${reasoningOnly})`);
+  }
+  return content;
 }

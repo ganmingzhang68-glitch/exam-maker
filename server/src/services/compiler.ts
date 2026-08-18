@@ -1,11 +1,15 @@
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync, existsSync, mkdirSync, copyFileSync } from 'node:fs';
 import { join, basename } from 'node:path';
 import { db, schema, saveToDisk } from '../db/index.js';
 import { addEvent } from '../controllers/project.js';
 import { getProjectDir } from './workflow.js';
-import { eq } from 'drizzle-orm';
-import { isConfigured, sendMessage } from './ai.js';
+import { and, eq } from 'drizzle-orm';
+import { importGeneratedQuestionsFromProject } from './questionImporter.js';
+import { isConfigured } from './ai.js';
+import { runStructuredPrompt } from './promptRunner.js';
+import { independentValidationPrompt } from '../prompts/independentValidationPrompt.js';
+import { detectEnvironment, type EnvInfo } from './envDetect.js';
 
 export interface CompileResult {
   paperName: string;
@@ -15,34 +19,34 @@ export interface CompileResult {
   errors: string[];
 }
 
-interface EnvInfo {
-  latex: { available: boolean; engine: string | null };
-  pandoc: { available: boolean };
-}
-
 export async function compilePapers(
   projectId: number, outputType: string
 ): Promise<CompileResult[]> {
+  const questionImport = importGeneratedQuestionsFromProject(projectId);
+  if (questionImport.imported > 0 || questionImport.skipped > 0) {
+    addEvent(projectId, 'step-6', 'log',
+      `📚 AI题目入库: 新增${questionImport.imported}题, 已存在${questionImport.skipped}题`);
+  }
   const dir = getProjectDir(projectId);
-  const paperDir = join(dir, 'papers');
   const outputDir = join(dir, 'output');
   if (!existsSync(outputDir)) mkdirSync(outputDir, { recursive: true });
 
+  const deliverableTypes = new Set(['generated_paper', 'student_paper', 'answer_key', 'rubric']);
   const papers = db.select().from(schema.projectFiles)
     .where(eq(schema.projectFiles.projectId, projectId))
-    .where(eq(schema.projectFiles.type, 'generated_paper'))
-    .all();
+    .all()
+    .filter(file => deliverableTypes.has(file.type));
 
   if (papers.length === 0) {
     addEvent(projectId, 'step-6', 'log', '⚠ 未找到生成的试卷文件');
     return [];
   }
 
-  const env = detectEnv();
+  const env = detectEnvironment();
   const results: CompileResult[] = [];
 
-  addEvent(projectId, 'step-6', 'log', `📦 ${papers.length} 套试卷待编译/转换`);
-  addEvent(projectId, 'step-6', 'log', `🎯 输出格式: ${outputType}`);
+  addEvent(projectId, 'step-6', 'log', `📦 ${papers.length} 个试卷制品待编译/转换`);
+  addEvent(projectId, 'step-6', 'log', `🎯 生成 LaTeX/PDF、DOCX、Markdown（首选格式: ${outputType}）`);
 
   for (const paper of papers) {
     const result: CompileResult = {
@@ -76,36 +80,47 @@ export async function compilePapers(
       result.outputFiles.push(texCopy);
     }
 
-    // Step 2: Convert if needed
-    if (outputType !== 'latex' && env.pandoc.available) {
+    // Step 2: Always derive DOCX and Markdown from the same LaTeX paper object.
+    if (env.pandoc.available) {
       const srcTex = join(outputDir, basename(paper.filepath));
-      const { outPath, errors: convErrors } = convertFile(srcTex, outputDir, outputType);
-      if (outPath) result.outputFiles.push(outPath);
-      result.errors.push(...convErrors);
+      for (const format of ['docx', 'md']) {
+        const { outPath, errors: convErrors } = convertFile(srcTex, outputDir, format, env.pandoc.executable!);
+        if (outPath) result.outputFiles.push(outPath);
+        result.errors.push(...convErrors);
 
-      if (outPath) {
-        addEvent(projectId, 'step-6', 'log', `  🔄 ${outputType}: ${basename(outPath)} ✅`);
-        // Post-conversion verify
-        const verified = await verifyConversion(paper.filepath, outPath, outputType);
-        addEvent(projectId, 'step-6', 'log', `  ${verified ? '✅' : '⚠'} 转换核对${verified ? ' PASS' : ' 发现差异'}`);
+        if (outPath) {
+          addEvent(projectId, 'step-6', 'log', `  🔄 ${format}: ${basename(outPath)} ✅`);
+          const verified = await verifyConversion(paper.filepath, outPath, format);
+          addEvent(projectId, 'step-6', 'log', `  ${verified ? '✅' : '⚠'} ${format} 完整性核对${verified ? ' PASS' : ' 发现差异'}`);
+        }
       }
-    } else if (outputType !== 'latex' && !env.pandoc.available) {
-      addEvent(projectId, 'step-6', 'log', `  ⚠ pandoc 未安装，无法转为 ${outputType}`);
+    } else {
+      result.errors.push('pandoc 未安装，无法生成 DOCX 和 Markdown');
+      addEvent(projectId, 'step-6', 'log', '  ⚠ pandoc 未安装，无法生成 DOCX 和 Markdown');
     }
 
-    result.success = result.outputFiles.length > 0;
+    result.success = ['.pdf', '.docx', '.md'].every(ext => result.outputFiles.some(path => path.endsWith(ext)));
+    if (!result.success) result.errors.push('交付格式不完整：必须同时生成 PDF、DOCX 和 Markdown');
 
     // Save output files as project files
     for (const outFile of result.outputFiles) {
       const outName = basename(outFile);
       const existing = db.select().from(schema.projectFiles)
-        .where(eq(schema.projectFiles.projectId, projectId))
-        .where(eq(schema.projectFiles.filename, outName))
+        .where(and(
+          eq(schema.projectFiles.projectId, projectId),
+          eq(schema.projectFiles.filename, outName),
+        ))
         .get();
       if (!existing) {
+        const sourceMetadata = parseMetadata(paper.metadata);
         db.insert(schema.projectFiles).values({
           projectId, type: 'final_output', filename: outName, filepath: outFile,
-          metadata: JSON.stringify({ source: paper.filename, format: outputType }),
+          metadata: JSON.stringify({
+            source: paper.filename,
+            format: outName.split('.').pop(),
+            artifactType: sourceMetadata.artifactType ?? paper.type,
+            audience: sourceMetadata.audience ?? 'teacher',
+          }),
         }).run();
       }
     }
@@ -114,15 +129,21 @@ export async function compilePapers(
   }
 
   const successCount = results.filter(r => r.success).length;
-  addEvent(projectId, 'step-6', 'done', `📊 ${successCount}/${results.length} 套处理完成`);
+  addEvent(projectId, 'step-6', 'done', `📊 ${successCount}/${results.length} 个制品处理完成`);
   saveToDisk();
   return results;
+}
+
+function parseMetadata(raw: string | null): Record<string, unknown> {
+  if (!raw) return {};
+  try { return JSON.parse(raw) as Record<string, unknown>; } catch { return {}; }
 }
 
 // ====== LaTeX Compilation ======
 function compileLatexFile(texPath: string, outputDir: string, env: EnvInfo): { pdfPath?: string; errors: string[] } {
   const errors: string[] = [];
   const engine = env.latex.engine!;
+  const executable = env.latex.executable!;
   const baseName = basename(texPath, '.tex');
 
   // Copy tex to output dir
@@ -130,17 +151,16 @@ function compileLatexFile(texPath: string, outputDir: string, env: EnvInfo): { p
   if (texPath !== workTex) copyFileSync(texPath, workTex);
 
   try {
-    const cmd = engine === 'tectonic'
-      ? `tectonic "${workTex}" --outdir "${outputDir}"`
+    const args = engine === 'tectonic'
+      ? [workTex, '--outdir', outputDir]
       : engine === 'latexmk'
-        ? `latexmk -xelatex -interaction=nonstopmode -halt-on-error -outdir="${outputDir}" "${workTex}"`
-        : `xelatex -interaction=nonstopmode -halt-on-error -output-directory="${outputDir}" "${workTex}"`;
-
-    execSync(cmd, { encoding: 'utf-8', timeout: 60000, cwd: outputDir, windowsHide: true });
+        ? ['-xelatex', '-interaction=nonstopmode', '-halt-on-error', `-outdir=${outputDir}`, workTex]
+        : ['-interaction=nonstopmode', '-halt-on-error', `-output-directory=${outputDir}`, workTex];
+    execFileSync(executable, args, { encoding: 'utf-8', timeout: 60000, cwd: outputDir, windowsHide: true });
 
     // Run twice for cross-references
     if (engine === 'xelatex') {
-      execSync(`xelatex -interaction=nonstopmode -output-directory="${outputDir}" "${workTex}"`,
+      execFileSync(executable, ['-interaction=nonstopmode', `-output-directory=${outputDir}`, workTex],
         { timeout: 60000, cwd: outputDir, windowsHide: true });
     }
 
@@ -166,7 +186,7 @@ function compileLatexFile(texPath: string, outputDir: string, env: EnvInfo): { p
 }
 
 // ====== Pandoc Conversion ======
-function convertFile(texPath: string, outputDir: string, format: string): { outPath?: string; errors: string[] } {
+function convertFile(texPath: string, outputDir: string, format: string, pandocExecutable: string): { outPath?: string; errors: string[] } {
   const errors: string[] = [];
   const baseName = basename(texPath, '.tex');
 
@@ -184,15 +204,14 @@ function convertFile(texPath: string, outputDir: string, format: string): { outP
     const outExt = format === 'docx' ? 'docx' : 'md';
     const outPath = join(outputDir, `${baseName}.${outExt}`);
 
-    const cmd = format === 'docx'
-      ? `pandoc "${convTex}" -o "${outPath}"`
-      : `pandoc "${convTex}" -o "${outPath}" -t gfm --wrap=none --from=latex+raw_tex`;
-
-    execSync(cmd, { encoding: 'utf-8', timeout: 30000, windowsHide: true });
+    const args = format === 'docx'
+      ? [convTex, '-o', outPath]
+      : [convTex, '-o', outPath, '-t', 'gfm', '--wrap=none', '--from=latex+raw_tex'];
+    execFileSync(pandocExecutable, args, { encoding: 'utf-8', timeout: 30000, windowsHide: true });
 
     if (existsSync(outPath)) {
       // Check score count
-      const origScores = (texPath.match(/\\score\{/g) || []).length;
+      const origScores = (readFileSync(texPath, 'utf-8').match(/\\score\{/g) || []).length;
       const convScores = (content.match(/（\d+分）/g) || []).length;
       if (convScores < origScores) {
         errors.push(`分值丢失: ${origScores}→${convScores}`);
@@ -210,30 +229,19 @@ function convertFile(texPath: string, outputDir: string, format: string): { outP
 
 // ====== Post-conversion Check ======
 async function verifyConversion(texSource: string, convertedFile: string, format: string): Promise<boolean> {
-  if (!isConfigured()) return false;
   try {
     const tex = readFileSync(texSource, 'utf-8');
+    if (format === 'docx') {
+      const docx = readFileSync(convertedFile);
+      return docx.byteLength > 4 && docx[0] === 0x50 && docx[1] === 0x4b;
+    }
+    if (!isConfigured()) return false;
     const conv = readFileSync(convertedFile, 'utf-8');
-    const response = await sendMessage(
-      '你是格式转换核对员。比对tex源码与转换后文件，报PASS或具体差异。',
-      [{
-        role: 'user',
-        content: `核对转换完整性:\n## tex源码\n${tex.slice(0, 2000)}\n## ${format}\n${conv.slice(0, 2000)}\n\n题目/公式/表格/分值是否完整？输出 VERIFY: PASS 或 VERIFY: ISSUES`
-      }],
-      { maxTokens: 1500 }
-    );
-    return response.includes('VERIFY: PASS');
+    const validation = await runStructuredPrompt(independentValidationPrompt, {
+      scope: 'export_integrity', canonicalObject: { sourceLatex: tex, convertedContent: conv, format },
+      constraints: { preserveQuestions: true, preserveFormulae: true, preserveTables: true, preserveScores: true },
+      deterministicFindings: [], sourceEvidence: [],
+    }, { maxTokens: 2500 });
+    return validation.output.status === 'ok' && validation.output.passed;
   } catch { return false; }
-}
-
-// ====== Env Detection ======
-function detectEnv(): EnvInfo {
-  const env: EnvInfo = { latex: { available: false, engine: null }, pandoc: { available: false } };
-  for (const engine of ['xelatex', 'latexmk', 'tectonic']) {
-    try { execSync(`${engine} --version`, { timeout: 5000, windowsHide: true }); env.latex = { available: true, engine }; break; }
-    catch { /* next */ }
-  }
-  try { execSync('pandoc --version', { timeout: 5000, windowsHide: true }); env.pandoc.available = true; }
-  catch { /* no pandoc */ }
-  return env;
 }

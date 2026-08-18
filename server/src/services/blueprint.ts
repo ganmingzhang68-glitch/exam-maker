@@ -2,8 +2,13 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { db, schema, saveToDisk } from '../db/index.js';
 import { addEvent } from '../controllers/project.js';
-import { isConfigured, sendMessage } from './ai.js';
+import { isConfigured } from './ai.js';
 import type { DifficultyRatio } from '@exam-maker/shared';
+import { runStructuredPrompt } from './promptRunner.js';
+import { questionParsingPrompt } from '../prompts/questionParsingPrompt.js';
+import { taxonomyGenerationPrompt } from '../prompts/taxonomyGenerationPrompt.js';
+import { classificationPrompt } from '../prompts/classificationPrompt.js';
+import { independentValidationPrompt } from '../prompts/independentValidationPrompt.js';
 
 // ====== Types ======
 export interface BlueprintEntry {
@@ -81,8 +86,10 @@ export async function analyzeBlueprint(
 
   // Collect parsed tex files
   const texFiles = db.select().from(schema.projectFiles)
-    .where(eq(schema.projectFiles.projectId, projectId))
-    .where(eq(schema.projectFiles.type, 'source_tex'))
+    .where(and(
+      eq(schema.projectFiles.projectId, projectId),
+      eq(schema.projectFiles.type, 'source_tex'),
+    ))
     .all();
 
   if (texFiles.length === 0) {
@@ -162,21 +169,44 @@ async function analyzeQuestions(
     const src = texFile.filename.replace('.tex', '');
 
     try {
-      const prompt = buildAnalyzePrompt(content, src, course, scope);
-      const response = await sendMessage(
-        '你是学科试卷分析专家。严格按JSONL格式输出，每题一行。每行是一个完整的JSON对象。不输出任何JSON之外的文字。',
-        [{ role: 'user', content: prompt }],
-        { maxTokens: 8000 }
-      );
+      const parsedRun = await runStructuredPrompt(questionParsingPrompt, {
+        sourceExamId: texFile.id, sourceDocumentId: texFile.id,
+        questionSections: [{ id: 'legacy-source', pageStart: 1, pageEnd: 1 }],
+        pages: [{ pageNumber: 1, text: content, blockIds: [] }],
+      }, { maxTokens: 8000 });
+      if (parsedRun.output.questions.length === 0) throw new Error('question_parsing_prompt 未识别题目');
 
-      // Parse JSONL from response
-      const entries = parseJsonl<BlueprintEntry>(response, [
-        'src', 'no', 'type', 'points', 'kp', 'difficulty', 'cognition', 'stem_kind',
-      ]);
+      const taxonomyRun = await runStructuredPrompt(taxonomyGenerationPrompt, {
+        course: { id: projectId, name: course, description: scope }, materialSummaries: [],
+        questions: parsedRun.output.questions.map(question => ({ id: question.temporaryId, stem: question.rawStem, evidence: question.evidence })),
+        existingNodes: [],
+      }, { maxTokens: 5000 });
+      const nodes = taxonomyRun.output.nodes.filter(node => node.action !== 'propose_move');
+      if (nodes.length === 0) throw new Error('taxonomy_generation_prompt 未产生考点候选');
 
-      for (const entry of entries) {
-        entry.src = src; // Override to our canonical source name
-      }
+      const classificationRun = await runStructuredPrompt(classificationPrompt, {
+        questions: parsedRun.output.questions.map(question => ({ id: question.temporaryId, questionType: question.questionType, stem: question.rawStem, score: question.originalScore, evidence: question.evidence })),
+        taxonomyNodes: nodes.map(node => ({ id: node.temporaryId, name: node.name, parentId: node.parentTemporaryId, isLocked: false })),
+        lockedClassifications: [],
+      }, { maxTokens: 6000 });
+      const nodeNames = new Map(nodes.map(node => [node.temporaryId, node.name]));
+      const questions = new Map(parsedRun.output.questions.map(question => [question.temporaryId, question]));
+      const difficultyNames = { basic: '基础', medium: '中等', hard: '难' } as const;
+      const cognitionNames: Record<string, BlueprintEntry['cognition']> = {
+        remember: '记忆', understand: '理解', apply: '应用', analyze: '分析', evaluate: '评价/综合', create: '评价/综合',
+      };
+      const entries: BlueprintEntry[] = classificationRun.output.classifications.map(classification => {
+        const question = questions.get(classification.questionId)!;
+        return {
+          src, no: question.originalQuestionNo, type: question.questionType,
+          points: question.originalScore ?? 0,
+          kp: classification.knowledgePoints.map(point => nodeNames.get(point.knowledgePointId) ?? point.knowledgePointId),
+          difficulty: difficultyNames[classification.difficulty.difficultyLevel],
+          cognition: cognitionNames[classification.cognitiveLevel] ?? '理解',
+          stem_kind: question.rawStem.slice(0, 80),
+          note: classification.status === 'uncertain' ? '需要教师确认' : undefined,
+        };
+      });
 
       allEntries.push(...entries);
       addEvent(projectId, 'step-2', 'log', `  📝 ${src}: 识别 ${entries.length} 题`);
@@ -187,32 +217,6 @@ async function analyzeQuestions(
   }
 
   return allEntries;
-}
-
-function buildAnalyzePrompt(
-  texContent: string, src: string, course: string, scope: string | null
-): string {
-  return `请分析以下《${course}》真题 LaTeX，**逐题**提取考点信息。
-
-## 输出格式（JSONL，每题一行，完整 JSON 对象）
-{"src":"${src}","no":"一.1","type":"选择题","points":3,"kp":["考点名"],"difficulty":"基础","cognition":"理解","stem_kind":"直接计算求值"}
-{"src":"${src}","no":"一.2","type":"选择题","points":3,"kp":["考点名"],"difficulty":"中等","cognition":"应用","stem_kind":"含参讨论"}
-
-## 字段说明
-- **no**: 题号（如"一.1"、"二"、"三.2"），保持与原文一致
-- **type**: 题型（选择题/填空题/计算题/证明题/简答题/论述题…）
-- **points**: 该题/小题分值（标注了\\score{}的取该值，否则按总分/题量估算）
-- **kp**: 主考考点数组，每题1-2个考点，用标准学术名称
-- **difficulty**: 基础/中等/难。判据：
-  - 基础＝单一考点、直接套用、步骤少、认真复习必得分
-  - 中等＝2考点综合或需转化、含参基本情形
-  - 难＝多考点综合、严谨论证、多步推理，但不超纲不偏怪
-- **cognition**: 记忆/理解/应用/分析/评价综合
-- **stem_kind**: 设问特征短语（如"给矩阵求特征值"、"由条件证明结论"、"判断并说明理由"），用于后续命题变形轮换
-
-${scope ? `## 命题范围\n${scope}\n` : ''}
-## 真题 LaTeX 内容
-${texContent.slice(0, 10000)}`;
 }
 
 // ====== Phase 2: Knowledge Point List ======
@@ -327,35 +331,13 @@ async function verifyBlueprint(
   if (!isConfigured() || result.entries.length === 0) return false;
 
   try {
-    const entriesSummary = result.entries.slice(0, 30).map(e =>
-      `${e.no}|${e.type}|${e.points}分|${e.kp.join('/')}|${e.difficulty}|${e.cognition}|${e.stem_kind}`
-    ).join('\n');
-
-    const verifyPrompt = `你是一位严谨的学科分析核对员。请独立核对以下《${course}》考点分析结果：
-
-## 考点清单
-${result.kpList.map(k => `${k.id}: ${k.name} (出现${k.frequency}次, 合计${k.totalPoints}分)`).join('\n')}
-
-## 逐题分析（前30题）
-题号|题型|分值|考点|难度|认知层次|设问范式
-${entriesSummary}
-
-## 核对清单（逐条回复 PASS 或 FAIL+原因）
-1. 考点归类是否合理？有无明显误分类？
-2. 难度判定是否一致？（同类型/同考点题目难度是否前后矛盾）
-3. 考点粒度是否合适？（不过粗不过细，能指导命题）
-4. 认知层次判定是否准确？
-5. 是否有重要考点遗漏？
-
-最后输出一行：VERDICT: PASS 或 VERDICT: FAIL`;
-
-    const response = await sendMessage(
-      '你是学科分析核对员。独立比对，严格审查。每个核对项必须明确PASS或FAIL并附理由。',
-      [{ role: 'user', content: verifyPrompt }],
-      { maxTokens: 3000 }
-    );
-
-    return response.includes('VERDICT: PASS');
+    const validation = await runStructuredPrompt(independentValidationPrompt, {
+      scope: 'classification',
+      canonicalObject: { course, knowledgePoints: result.kpList, entries: result.entries },
+      constraints: { everyQuestionRequiresPrimaryKnowledgePoint: true },
+      deterministicFindings: [], sourceEvidence: [],
+    }, { maxTokens: 4000 });
+    return validation.output.status === 'ok' && validation.output.passed;
   } catch {
     return false;
   }
@@ -390,8 +372,10 @@ function saveBlueprintOutputs(projectId: number, result: BlueprintResult): void 
     { filepath: mdPath, filename: 'blueprint.md', type: 'blueprint' },
   ]) {
     const existing = db.select().from(schema.projectFiles)
-      .where(eq(schema.projectFiles.projectId, projectId))
-      .where(eq(schema.projectFiles.filename, filename))
+      .where(and(
+        eq(schema.projectFiles.projectId, projectId),
+        eq(schema.projectFiles.filename, filename),
+      ))
       .get();
 
     if (existing) {
@@ -612,7 +596,7 @@ function heuristicAnalysis(texFiles: Array<typeof schema.projectFiles.$inferSele
 }
 
 // ====== JSONL Parser ======
-function parseJsonl<T extends Record<string, unknown>>(
+function parseJsonl<T extends object>(
   text: string,
   requiredFields: string[]
 ): T[] {
@@ -652,7 +636,7 @@ function parseJsonl<T extends Record<string, unknown>>(
 }
 
 // Re-export for use in workflow
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 
 function getProjectDir(projectId: number): string {
   return join(process.cwd(), 'data', 'projects', String(projectId));

@@ -1,59 +1,81 @@
+import type { Database } from 'sql.js';
 import { rawDb } from './index.js';
+import { initialMigration } from './migrations/001_initial.js';
+import { examMvpFoundationMigration } from './migrations/002_exam_mvp_foundation.js';
+import { examDeliveryMigration } from './migrations/003_exam_delivery.js';
+import { gradingConfigMigration } from './migrations/004_grading_config.js';
+import { questionGenerationDomainMigration } from './migrations/005_question_generation_domain.js';
+import { promptAiRunMetadataMigration } from './migrations/006_prompt_ai_run_metadata.js';
+import { answerAlignmentMigration } from './migrations/007_answer_alignment.js';
+import { secureExportArtifactsMigration } from './migrations/008_secure_export_artifacts.js';
+import { similarQuestionPipelineMigration } from './migrations/009_similar_question_pipeline.js';
+import { courseManagementMigration } from './migrations/010_course_management.js';
+import { classEnrollmentMigration } from './migrations/011_class_enrollment.js';
+import { questionBankV1Migration } from './migrations/012_question_bank_v1.js';
+import { paperLibraryV1Migration } from './migrations/013_paper_library_v1.js';
+import { productionJobsMigration } from './migrations/014_production_jobs.js';
+import { questionQualityReportsMigration } from './migrations/015_question_quality_reports.js';
+import { difficultyCalibrationMigration } from './migrations/016_difficulty_calibration.js';
+import { aiGradingSuggestionsMigration } from './migrations/017_ai_grading_suggestions.js';
+import { gradingCalibrationMigration } from './migrations/018_grading_calibration.js';
+import { studentKnowledgeMasteryMigration } from './migrations/019_student_knowledge_mastery.js';
+import { practiceSessionsMigration } from './migrations/020_practice_sessions.js';
+import { teachingAnalyticsMigration } from './migrations/021_teaching_analytics.js';
+import { gradeReviewsMigration } from './migrations/022_grade_reviews.js';
+import { adminConsoleMigration } from './migrations/023_admin_console.js';
+import { organizationsMigration } from './migrations/024_organizations.js';
+import { performanceIndexesMigration } from './migrations/025_performance_indexes.js';
 
-export function runMigrations() {
-  rawDb.run(`CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    username TEXT NOT NULL UNIQUE,
-    email TEXT NOT NULL UNIQUE,
-    password_hash TEXT NOT NULL,
-    role TEXT NOT NULL DEFAULT 'teacher' CHECK(role IN ('teacher','admin')),
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+interface Migration {
+  id: string;
+  up(database: Database): void;
+}
+
+const migrations: Migration[] = [
+  initialMigration,
+  examMvpFoundationMigration,
+  examDeliveryMigration,
+  gradingConfigMigration,
+  questionGenerationDomainMigration,
+  promptAiRunMetadataMigration,
+  answerAlignmentMigration,
+  secureExportArtifactsMigration,
+  similarQuestionPipelineMigration,
+  courseManagementMigration,
+  classEnrollmentMigration,
+  questionBankV1Migration,
+  paperLibraryV1Migration,
+  productionJobsMigration,
+  questionQualityReportsMigration,
+  difficultyCalibrationMigration,
+  aiGradingSuggestionsMigration,
+  gradingCalibrationMigration,
+  studentKnowledgeMasteryMigration,
+  practiceSessionsMigration,
+  teachingAnalyticsMigration,
+  gradeReviewsMigration,
+  adminConsoleMigration,
+  organizationsMigration,
+  performanceIndexesMigration,
+];
+
+export function runMigrations(database: Database = rawDb): void {
+  database.run(`CREATE TABLE IF NOT EXISTS schema_migrations (
+    id TEXT PRIMARY KEY,
+    applied_at TEXT NOT NULL DEFAULT (datetime('now'))
   )`);
 
-  rawDb.run(`CREATE TABLE IF NOT EXISTS projects (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    title TEXT NOT NULL,
-    course TEXT NOT NULL,
-    scope TEXT,
-    difficulty TEXT NOT NULL DEFAULT '{"basic":60,"medium":30,"hard":10}',
-    n_sets INTEGER NOT NULL DEFAULT 8,
-    output_type TEXT NOT NULL DEFAULT 'latex' CHECK(output_type IN ('latex','docx','md')),
-    verify_mode TEXT NOT NULL DEFAULT 'auto' CHECK(verify_mode IN ('auto','computational','conceptual','mixed')),
-    status TEXT NOT NULL DEFAULT 'drafting',
-    user_id INTEGER NOT NULL REFERENCES users(id),
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )`);
+  const appliedResult = database.exec('SELECT id FROM schema_migrations');
+  const applied = new Set(
+    (appliedResult[0]?.values ?? []).map((row) => String(row[0]))
+  );
 
-  rawDb.run(`CREATE TABLE IF NOT EXISTS project_files (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-    type TEXT NOT NULL,
-    filename TEXT NOT NULL,
-    filepath TEXT NOT NULL,
-    metadata TEXT,
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )`);
+  for (const migration of migrations) {
+    if (applied.has(migration.id)) continue;
+    migration.up(database);
+    database.run('INSERT INTO schema_migrations (id) VALUES (?)', [migration.id]);
+    console.log(`✅ Applied migration ${migration.id}`);
+  }
 
-  rawDb.run(`CREATE TABLE IF NOT EXISTS checkpoints (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-    step TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'pending',
-    teacher_notes TEXT,
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )`);
-
-  rawDb.run(`CREATE TABLE IF NOT EXISTS job_events (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-    step TEXT NOT NULL,
-    event_type TEXT NOT NULL,
-    message TEXT NOT NULL,
-    data TEXT,
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )`);
-
-  console.log('✅ Database tables verified');
+  console.log('✅ Database migrations verified');
 }

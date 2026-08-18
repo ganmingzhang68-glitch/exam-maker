@@ -3,9 +3,11 @@ import { join } from 'node:path';
 import { db, schema, saveToDisk } from '../db/index.js';
 import { addEvent } from '../controllers/project.js';
 import { getProjectDir } from './workflow.js';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import type { DifficultyRatio } from '@exam-maker/shared';
-import { isConfigured, sendMessage } from './ai.js';
+import { isConfigured } from './ai.js';
+import { runStructuredPrompt } from './promptRunner.js';
+import { generationPlanPrompt } from '../prompts/generationPlanPrompt.js';
 
 // ====== Types ======
 export interface QuestionSlot {
@@ -101,7 +103,7 @@ export async function assignDifficulty(
 }
 
 // ====== Phase 1: Build Slots ======
-function buildSlots(
+export function buildSlots(
   template: { sections: Array<{ type: string; count: number; pointsPerQuestion: number }> },
   blueprintEntries: Array<{ difficulty: string; points: number; no: string }>
 ): QuestionSlot[] {
@@ -116,7 +118,7 @@ function buildSlots(
   let questionCounter = 0;
   let bpIdx = 0;
 
-  for (const section of template.sections) {
+  for (const [sectionIndex, section] of template.sections.entries()) {
     for (let q = 1; q <= section.count; q++) {
       questionCounter++;
       // Try to get difficulty from blueprint if available
@@ -130,20 +132,16 @@ function buildSlots(
         else if (questionCounter > slots.length * 0.85) difficulty = '难';
       }
 
-      // For large-points questions, potentially split into sub-slots
-      if (section.pointsPerQuestion >= 10) {
-        // Split large questions into sub-parts for finer difficulty control
-        const splitSlots = splitLargeQuestion(section.type, q, section.pointsPerQuestion, difficulty);
-        slots.push(...splitSlots);
-      } else {
-        slots.push({
-          sectionType: section.type,
-          sectionIndex: section.sections ? section.sections.indexOf(section) : 0,
-          questionIndex: q,
-          score: section.pointsPerQuestion,
-          difficulty,
-        });
-      }
+      // One assessment-template question is one generation slot. Difficulty
+      // accounting must not silently multiply a large question into several
+      // independently generated questions.
+      slots.push({
+        sectionType: section.type,
+        sectionIndex,
+        questionIndex: q,
+        score: section.pointsPerQuestion,
+        difficulty,
+      });
     }
   }
 
@@ -222,7 +220,7 @@ function computeAssignment(
 async function tryAdjustWithAI(
   result: DifficultyAssignment,
   target: DifficultyRatio,
-  template: { sections: Array<{ type: string; count: number; pointsPerQuestion: number }>; totalScore: number },
+  template: { sections: Array<{ type: string; count: number; pointsPerQuestion: number; subtotal: number }>; totalScore: number },
   projectId: number
 ): Promise<Partial<DifficultyAssignment> | null> {
   if (!isConfigured()) {
@@ -231,71 +229,39 @@ async function tryAdjustWithAI(
   }
 
   try {
-    const prompt = `## 难度配比核算
-
-目标: 基础${target.basic}% / 中等${target.medium}% / 难${target.hard}%（容差 ±3%）
-总分: ${result.totalScore}
-
-当前状态:
-- 基础 ${result.basicTotal}分 (${result.basicPct}%)
-- 中等 ${result.mediumTotal}分 (${result.mediumPct}%)
-- 难 ${result.hardTotal}分 (${result.hardPct}%)
-
-偏差:
-- 基础需${target.basic - result.basicPct > 0 ? '增加' : '减少'}${Math.abs(target.basic - result.basicPct)}% ≈ ${Math.abs(Math.round(target.basic/100*result.totalScore) - result.basicTotal)}分
-- 中等需${target.medium - result.mediumPct > 0 ? '增加' : '减少'}${Math.abs(target.medium - result.mediumPct)}% ≈ ${Math.abs(Math.round(target.medium/100*result.totalScore) - result.mediumTotal)}分
-- 难需${target.hard - result.hardPct > 0 ? '增加' : '减少'}${Math.abs(target.hard - result.hardPct)}% ≈ ${Math.abs(Math.round(target.hard/100*result.totalScore) - result.hardTotal)}分
-
-大题结构:
-${template.sections.map(s => `- ${s.type}: ${s.count}题 × ${s.pointsPerQuestion}分 = ${s.subtotal}分`).join('\n')}
-
-## 任务
-把超过8分的大题拆成不同难度的小问来微调难度配比。输出 JSON:
-{
-  "splits": [
-    {"section": "计算题", "qIndex": 1, "originalScore": 12, "subSlots": [
-      {"difficulty": "基础", "score": 4, "description": "(1)直接计算"},
-      {"difficulty": "中等", "score": 4, "description": "(2)综合步骤"},
-      {"difficulty": "难", "score": 4, "description": "(3)证明/推广"}
-    ]}
-  ]
-}`;
-
-    const response = await sendMessage(
-      '你是考试难度核算专家。按分值拆大题小问命中目标配比。只输出JSON。',
-      [{ role: 'user', content: prompt }],
-      { maxTokens: 2000 }
-    );
-
-    // Parse AI suggestion
-    const parsed = parseJson<{ splits: SplitRecord[] }>(response);
-    if (parsed.splits && parsed.splits.length > 0) {
-      result.splits = parsed.splits;
-
-      // Apply splits: re-assign difficulties based on AI suggestions
-      for (const split of parsed.splits) {
-        // Find the original slot and replace with sub-slots
-        const idx = result.slots.findIndex(
-          s => s.sectionType === split.originalSection &&
-               s.questionIndex === split.originalQuestionIndex
-        );
-        if (idx >= 0) {
-          const newSlots = split.subSlots.map(ss => ({
-            sectionType: result.slots[idx].sectionType,
-            sectionIndex: result.slots[idx].sectionIndex,
-            questionIndex: result.slots[idx].questionIndex,
-            score: ss.score,
-            difficulty: normalizeDifficulty(ss.difficulty) as '基础' | '中等' | '难',
-            note: ss.description,
-            splitFrom: `${split.originalSection}${split.originalQuestionIndex}`,
-          }));
-          result.slots.splice(idx, 1, ...newSlots);
-        }
-      }
-
-      // Recompute
-      const updated = computeAssignment(result.slots, target, result.totalScore);
-      return updated;
+    const targetCells = (['basic', 'medium', 'hard'] as const).map(level => ({
+      knowledgePointId: 'legacy-unclassified', questionType: 'mixed', cognitiveLevel: 'apply',
+      difficultyLevel: level, questionCount: 0,
+      score: Math.round(target[level] / 100 * result.totalScore * 100) / 100,
+    }));
+    const planned = await runStructuredPrompt(generationPlanPrompt, {
+      numberOfSets: 1, totalScorePerSet: result.totalScore,
+      assessmentTemplate: {
+        sections: template.sections.map((section, index) => ({ id: `section-${index + 1}`, questionType: section.type, questionCount: section.count, subtotal: section.subtotal })),
+        totalScore: template.totalScore,
+      },
+      targetBlueprint: { id: projectId, cells: targetCells },
+      tolerances: { difficulty: 0.05, knowledgeCoverage: 1 },
+      materialCapabilities: { formula: true, image: false, code: false, table: true, material: true },
+    }, { maxTokens: 4000 });
+    const output = planned.output;
+    const plannedTotal = output.slots.reduce((sum, slot) => sum + slot.score, 0);
+    const expectedQuestionCount = template.sections.reduce((sum, section) => sum + section.count, 0);
+    if (output.status === 'ok' && output.slots.length === expectedQuestionCount && Math.abs(plannedTotal - result.totalScore) < 1e-6) {
+      const sectionQuestionCounts = new Map<number, number>();
+      const plannedSlots: QuestionSlot[] = output.slots.map(slot => {
+        const sectionIndex = Math.max(0, Number(slot.sectionId.match(/(\d+)$/)?.[1] ?? 1) - 1);
+        const questionIndex = (sectionQuestionCounts.get(sectionIndex) ?? 0) + 1;
+        sectionQuestionCounts.set(sectionIndex, questionIndex);
+        return {
+          sectionType: template.sections[sectionIndex]?.type ?? 'subjective',
+          sectionIndex,
+          questionIndex,
+          score: slot.score,
+          difficulty: normalizeDifficulty(slot.difficulty.difficultyLevel),
+        };
+      });
+      return computeAssignment(plannedSlots, target, result.totalScore);
     }
   } catch (err) {
     addEvent(projectId, 'step-4', 'log',
@@ -364,8 +330,10 @@ function saveAssignmentOutputs(
   // Record file
   const diffPath = join(dir, 'difficulty.json');
   const existing = db.select().from(schema.projectFiles)
-    .where(eq(schema.projectFiles.projectId, projectId))
-    .where(eq(schema.projectFiles.filename, 'difficulty.json'))
+    .where(and(
+      eq(schema.projectFiles.projectId, projectId),
+      eq(schema.projectFiles.filename, 'difficulty.json'),
+    ))
     .get();
 
   if (!existing) {
@@ -461,17 +429,9 @@ function generateDifficultyMd(
 
 // ====== Helpers ======
 function normalizeDifficulty(d: string): QuestionSlot['difficulty'] {
-  if (d.startsWith('基础') || d === '简单') return '基础';
-  if (d.startsWith('中等')) return '中等';
-  if (d.startsWith('难')) return '难';
+  const normalized = d.trim().toLowerCase();
+  if (normalized === 'basic' || normalized === 'easy' || d.startsWith('基础') || d === '简单') return '基础';
+  if (normalized === 'medium' || normalized === 'intermediate' || d.startsWith('中等')) return '中等';
+  if (normalized === 'hard' || d.startsWith('难')) return '难';
   return '中等';
-}
-
-function parseJson<T>(text: string): T {
-  try { return JSON.parse(text) as T; } catch { /* continue */ }
-  const block = text.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (block) { try { return JSON.parse(block[1].trim()) as T; } catch { /* continue */ } }
-  const brace = text.match(/\{[\s\S]*\}/);
-  if (brace) { try { return JSON.parse(brace[0]) as T; } catch { /* continue */ } }
-  return {} as T;
 }

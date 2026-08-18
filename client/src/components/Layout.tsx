@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
-import { Layout as AntLayout, Menu, Button, Avatar, Dropdown, theme } from 'antd';
+import { Layout as AntLayout, Menu, Button, Avatar, Dropdown, Select, theme } from 'antd';
 import {
   ProjectOutlined,
   PlusOutlined,
@@ -8,8 +8,21 @@ import {
   UserOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
+  DatabaseOutlined,
+  AuditOutlined,
+  FileDoneOutlined,
+  CalendarOutlined,
+  SolutionOutlined,
+  RobotOutlined,
+  ReadOutlined,
+  TeamOutlined,
+  DashboardOutlined,
+  ClockCircleOutlined,
+  EditOutlined,
 } from '@ant-design/icons';
 import { useAuthStore } from '../store/authStore';
+import type { Organization } from '@exam-maker/shared';
+import { listOrganizations } from '../services/organization';
 
 const { Header, Sider, Content } = AntLayout;
 
@@ -19,11 +32,69 @@ const AppLayout: React.FC = () => {
   const location = useLocation();
   const { user, logout } = useAuthStore();
   const { token: themeToken } = theme.useToken();
+  const [organizations, setOrganizations] = useState<Organization[]>([]);
+  React.useEffect(() => { listOrganizations().then((rows) => { setOrganizations(rows); if (!localStorage.getItem('organizationId') && rows.length) localStorage.setItem('organizationId', String(rows.find(row => row.isDefault)?.id ?? rows[0].id)); }).catch(() => setOrganizations([])); }, [user?.id]);
 
-  const menuItems = [
-    { key: '/', icon: <ProjectOutlined />, label: '出卷项目' },
-    { key: '/projects/new', icon: <PlusOutlined />, label: '新建项目' },
-  ];
+  const menuItems = user?.role === 'student'
+    ? [
+      { key: '/student/dashboard', icon: <DashboardOutlined />, label: '学习首页' },
+      { key: '/student/exams', icon: <SolutionOutlined />, label: '我的考试' },
+      { key: '/student/learning', icon: <ReadOutlined />, label: '知识点表现' },
+      { key: '/student/practice', icon: <EditOutlined />, label: '自主练习' },
+      { key: '/student/grade-reviews', icon: <AuditOutlined />, label: '成绩复核' },
+    ]
+    : user?.role === 'admin' ? [
+      { key: '/admin', icon: <DashboardOutlined />, label: '管理员控制台' },
+      { key: '/courses', icon: <ReadOutlined />, label: '全部课程' },
+      { key: '/teacher/tasks', icon: <ClockCircleOutlined />, label: '系统任务' },
+    ] : [
+      { key: '/', icon: <DashboardOutlined />, label: '教师首页' },
+      { key: '/courses', icon: <ReadOutlined />, label: '课程管理' },
+      { key: '/classes', icon: <TeamOutlined />, label: '班级管理' },
+      { key: '/projects', icon: <ProjectOutlined />, label: '出卷项目' },
+      { key: '/projects/new', icon: <PlusOutlined />, label: '新建项目' },
+      { key: '/questions/generate', icon: <RobotOutlined />, label: '快速仿题' },
+      { key: '/questions/review', icon: <AuditOutlined />, label: 'AI 题目审核' },
+      { key: '/questions', icon: <DatabaseOutlined />, label: '教师题库' },
+      { key: '/papers', icon: <FileDoneOutlined />, label: '试卷管理' },
+      { key: '/exams', icon: <CalendarOutlined />, label: '考试管理' },
+      { key: '/teacher/tasks', icon: <ClockCircleOutlined />, label: '后台任务' },
+      { key: '/teacher/grade-reviews', icon: <AuditOutlined />, label: '成绩复核' },
+    ];
+
+  const selectedMenuKey = location.pathname.startsWith('/student/dashboard')
+    ? '/student/dashboard'
+    : location.pathname.startsWith('/student/learning')
+    ? '/student/learning'
+    : location.pathname.startsWith('/student/practice')
+    ? '/student/practice'
+    : location.pathname.startsWith('/student/grade-reviews')
+    ? '/student/grade-reviews'
+    : location.pathname.startsWith('/student/exams') || location.pathname.startsWith('/attempts/')
+    ? '/student/exams'
+    : location.pathname.startsWith('/teacher/tasks')
+    ? '/teacher/tasks'
+    : location.pathname.startsWith('/teacher/grade-reviews')
+    ? '/teacher/grade-reviews'
+    : location.pathname.startsWith('/courses')
+    ? '/courses'
+    : location.pathname.startsWith('/classes')
+    ? '/classes'
+    : location.pathname.startsWith('/questions/review')
+    ? '/questions/review'
+    : location.pathname.startsWith('/questions/generate')
+    ? '/questions/generate'
+    : location.pathname.startsWith('/questions/') || location.pathname === '/questions'
+      ? '/questions'
+      : location.pathname.startsWith('/papers')
+        ? '/papers'
+        : location.pathname.startsWith('/exams')
+          ? '/exams'
+        : location.pathname.startsWith('/projects/new')
+          ? '/projects/new'
+          : location.pathname.startsWith('/projects/') || location.pathname === '/projects'
+            ? '/projects'
+            : location.pathname.startsWith('/admin') ? '/admin' : '/';
 
   const userMenuItems = [
     { key: 'logout', icon: <LogoutOutlined />, label: '退出登录', danger: true },
@@ -63,7 +134,7 @@ const AppLayout: React.FC = () => {
         </div>
         <Menu
           mode="inline"
-          selectedKeys={[location.pathname]}
+          selectedKeys={[selectedMenuKey]}
           items={menuItems}
           onClick={({ key }) => navigate(key)}
           style={{ borderRight: 0, marginTop: 8 }}
@@ -86,6 +157,7 @@ const AppLayout: React.FC = () => {
             icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
             onClick={() => setCollapsed(!collapsed)}
           />
+          <div style={{ marginLeft: 'auto', marginRight: 16 }}>{organizations.length > 0 && <Select aria-label="当前组织" style={{ width: 180 }} value={Number(localStorage.getItem('organizationId') ?? organizations.find(row => row.isDefault)?.id ?? organizations[0].id)} options={organizations.map(row => ({ value: row.id, label: row.name }))} onChange={(value) => { localStorage.setItem('organizationId', String(value)); window.location.reload(); }} />}</div>
           <Dropdown menu={{ items: userMenuItems, onClick: handleUserMenu }}>
             <div style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8 }}>
               <Avatar size="small" icon={<UserOutlined />} />

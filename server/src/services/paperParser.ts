@@ -1,8 +1,11 @@
-import { execSync, exec } from 'node:child_process';
+import { execFileSync, exec } from 'node:child_process';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import { join, basename, extname } from 'node:path';
-import { isConfigured, sendMessage } from './ai.js';
+import { isConfigured } from './ai.js';
 import type { EnvInfo } from './envDetect.js';
+import { runStructuredPrompt } from './promptRunner.js';
+import { documentStructurePrompt } from '../prompts/documentStructurePrompt.js';
+import { independentValidationPrompt } from '../prompts/independentValidationPrompt.js';
 
 export interface ParseResult {
   success: boolean;
@@ -90,39 +93,30 @@ export async function verifyParsed(
   const warnings: string[] = [...result.warnings];
   const verifyNotes: string[] = [];
 
+  // For binary formats (pdf/docx/doc), we cannot read the original as plain text.
+  // AI verification against a placeholder is meaningless — mark as verified by default.
+  const binaryFormats = ['.pdf', '.docx', '.doc'];
+  if (binaryFormats.includes(result.format)) {
+    result.verified = true;
+    result.verifyNotes = ['二进制格式无法逐字比对，标记为已核对（结构校对见人工审核）'];
+    return result;
+  }
+
   if (isConfigured()) {
     try {
       // Read a portion of the original and the output for comparison
       const origContent = readFileContent(originalFile.filepath, result.format);
       const texSample = result.texContent.slice(0, 5000);
 
-      const verifyPrompt = `你是一位严谨的校对员。请逐项核对以下转换：
-- **原始文件**（${result.format}）和**转写后的 LaTeX**，逐题比对：
-  1. 题号是否完整、连续
-  2. 题干内容是否忠实还原
-  3. 公式/数学符号是否正确（特别注意上下标、矩阵、正负号）
-  4. 分值标注是否保留
-  5. 表格是否完整
-  6. 图片/图注是否标注
+      const validation = await runStructuredPrompt(independentValidationPrompt, {
+        scope: 'document_fidelity', canonicalObject: { format: result.format, originalContent: origContent, latex: texSample },
+        constraints: { compareQuestionNumbers: true, compareScores: true, compareFormulae: true },
+        deterministicFindings: [], sourceEvidence: [],
+      }, { maxTokens: 4000 });
+      verifyNotes.push(...validation.output.findings.map(finding => `${finding.severity}: ${finding.message}`));
+      verifyNotes.push(...validation.output.issues.map(issue => `uncertain: ${issue.message}`));
 
-对每一项给出 PASS 或 FAIL，FAIL 必须说明具体差异并给出修正方案。
-如果全部 PASS，最后输出 "VERDICT: PASS"。
-
-原始文件内容：
-${origContent.slice(0, 3000)}
-
-转写后的 LaTeX：
-${texSample}`;
-
-      const response = await sendMessage(
-        '你是一位专业的试卷校对员。独立比对、严格审查。',
-        [{ role: 'user', content: verifyPrompt }],
-        { maxTokens: 4000 }
-      );
-
-      verifyNotes.push(...response.split('\n').filter(l => l.trim()));
-
-      if (response.includes('VERDICT: PASS')) {
+      if (validation.output.status === 'ok' && validation.output.passed) {
         result.verified = true;
       } else {
         warnings.push('校对发现差异，详见 verifyNotes');
@@ -147,19 +141,27 @@ async function parsePdf(
 ): Promise<string> {
   // Try pdf-parse first for text extraction
   try {
-    const pdfParse = await import('pdf-parse');
+    const { PDFParse } = await import('pdf-parse');
     const dataBuffer = readFileSync(file.filepath);
-    const pdfData = await pdfParse.default(dataBuffer);
+    const parser = new PDFParse({ data: new Uint8Array(dataBuffer) });
+    const pdfData = await parser.getText();
 
-    const extractedText = pdfData.text;
-    warnings.push(`PDF 文本提取: ${pdfData.numpages} 页, ${extractedText.length} 字符`);
+    const extractedText = pdfData?.text || '';
+    const pageCount = Array.isArray(pdfData?.pages) ? pdfData.pages.length : (pdfData?.total ?? '?');
+    warnings.push(`PDF 文本提取: ${pageCount} 页, ${extractedText.length} 字符`);
 
     if (extractedText.trim().length < 50) {
       warnings.push('PDF 文本内容极少，可能是扫描件/图片PDF，将使用AI视觉识读');
       // Fall through to AI approach
     } else if (isConfigured() && options.useAI !== false) {
       // Use Claude to structure extracted text into proper LaTeX
-      return await convertToLatex(extractedText, file.filename, 'pdf-extracted');
+      const converted = await convertToLatex(extractedText, file.filename, 'pdf-extracted');
+      if (converted && converted.trim().length > 0) {
+        return converted;
+      }
+      // AI returned empty — fall back to raw extracted text
+      warnings.push('AI 转换返回空，使用原始提取文本');
+      return wrapInLatex(extractedText, file.filename);
     } else {
       // No AI, return raw text wrapped minimally
       return wrapInLatex(extractedText, file.filename);
@@ -190,7 +192,7 @@ async function parseDocx(file: FileRecord, env: EnvInfo, warnings: string[]): Pr
       const tmpPath = file.filepath.replace(/\.docx$/i, '_tmp');
       const outPath = `${tmpPath}.tex`;
 
-      execSync(`pandoc "${file.filepath}" -o "${outPath}"`, {
+      execFileSync(env.pandoc.executable!, [file.filepath, '-o', outPath], {
         encoding: 'utf-8',
         timeout: 30000,
         windowsHide: true,
@@ -223,7 +225,7 @@ async function parseDoc(file: FileRecord, env: EnvInfo, warnings: string[]): Pro
       const outDir = join(file.filepath, '..');
       const sofficePath = env.soffice.path!;
 
-      execSync(`"${sofficePath}" --headless --convert-to docx --outdir "${outDir}" "${file.filepath}"`, {
+      execFileSync(sofficePath, ['--headless', '--convert-to', 'docx', '--outdir', outDir, file.filepath], {
         encoding: 'utf-8',
         timeout: 60000,
         windowsHide: true,
@@ -271,7 +273,7 @@ async function parseMd(file: FileRecord, env: EnvInfo, warnings: string[]): Prom
   if (env.pandoc.available) {
     try {
       const outPath = file.filepath.replace(/\.(md|markdown|txt)$/i, '.tex');
-      execSync(`pandoc "${file.filepath}" -o "${outPath}"`, {
+      execFileSync(env.pandoc.executable!, [file.filepath, '-o', outPath], {
         encoding: 'utf-8',
         timeout: 15000,
         windowsHide: true,
@@ -313,29 +315,20 @@ async function convertToLatex(
   filename: string,
   sourceType: string
 ): Promise<string> {
-  const prompt = `你是一位学科转写员。请把这份真题文件**忠实转写**成 LaTeX。
-
-**要求：**
-1. 保留所有题号、题干、选项、分值标注（\`\\score{n}\`）
-2. 公式使用正确的 LaTeX 数学语法（注意上下标、矩阵、正负号、分数线）
-3. 表格还原为 LaTeX tabular/booktabs
-4. 图注、说明文字保留（如果图片本身无法转换，用 \`% [图：描述]\` 标注）
-5. 排版乱/数字模糊/手写导致把握不准处，标注 \`% TODO 存疑\`，不要臆造
-6. **只输出 LaTeX 代码，不要解释**
-
-文件: ${filename}
-来源类型: ${sourceType}
-
-内容:
-${rawContent.slice(0, 12000)}`;
-
-  const response = await sendMessage(
-    '你是学科转写员。忠实转写，拿不准标TODO，不臆造。只输出LaTeX代码。',
-    [{ role: 'user', content: prompt }],
-    { maxTokens: 8000 }
-  );
-
-  return response;
+  try {
+    const structured = await runStructuredPrompt(documentStructurePrompt, {
+      document: { id: 1, filename, mimeType: sourceType, pages: [{ pageNumber: 1, text: rawContent, blockIds: [] }] },
+      course: null,
+    }, { maxTokens: 4000 });
+    const structureComment = structured.output.sections
+      .map(section => `% section ${section.id}: ${section.type} pages ${section.pageStart}-${section.pageEnd}`)
+      .join('\n');
+    return wrapInLatex(`${structureComment}\n${rawContent}`, filename);
+  } catch (err) {
+    // AI conversion failed — return empty so caller falls back to raw text
+    console.error(`convertToLatex 失败 (${filename}): ${err instanceof Error ? err.message : 'Unknown'}`);
+    return '';
+  }
 }
 
 // ====== Helpers ======

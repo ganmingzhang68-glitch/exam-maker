@@ -2,16 +2,21 @@ import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { db, schema } from '../db/index.js';
 import { eq } from 'drizzle-orm';
+import type { UserRole } from '@exam-maker/shared';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'exam-maker-secret-dev';
 
 export interface AuthRequest extends Request {
   userId?: number;
-  userRole?: string;
+  userRole?: UserRole;
+  requestId?: string;
+  organizationId?: number;
+  organizationExplicit?: boolean;
 }
 
-export function generateToken(userId: number, role: string): string {
-  return jwt.sign({ userId, role }, JWT_SECRET, { expiresIn: '7d' });
+export function generateToken(userId: number, role: UserRole): string {
+  const tokenVersion = db.select({ tokenVersion: schema.users.tokenVersion }).from(schema.users).where(eq(schema.users.id, userId)).get()?.tokenVersion ?? 0;
+  return jwt.sign({ userId, role, tokenVersion }, JWT_SECRET, { expiresIn: '7d' });
 }
 
 export function authMiddleware(req: AuthRequest, _res: Response, next: NextFunction) {
@@ -20,15 +25,16 @@ export function authMiddleware(req: AuthRequest, _res: Response, next: NextFunct
   const authHeader = req.headers.authorization;
   if (authHeader && authHeader.startsWith('Bearer ')) {
     token = authHeader.slice(7);
-  } else if (typeof req.query.token === 'string') {
+  } else if (typeof req.query.token === 'string' && /^\/api\/projects\/\d+\/(?:events|download\/\d+)$/.test(req.path)) {
     token = req.query.token;
   }
 
   if (token) {
     try {
-      const payload = jwt.verify(token, JWT_SECRET) as { userId: number; role: string };
-      req.userId = payload.userId;
-      req.userRole = payload.role;
+      const payload = jwt.verify(token, JWT_SECRET) as { userId: number; role: UserRole; tokenVersion?: number };
+      const user = db.select({ id: schema.users.id, role: schema.users.role, isActive: schema.users.isActive, tokenVersion: schema.users.tokenVersion })
+        .from(schema.users).where(eq(schema.users.id, payload.userId)).get();
+      if (user?.isActive && user.tokenVersion === (payload.tokenVersion ?? 0)) { req.userId = user.id; req.userRole = user.role; }
     } catch {
       // Token invalid, continue without auth
     }
@@ -43,7 +49,7 @@ export function requireAuth(req: AuthRequest, res: Response, next: NextFunction)
   return next();
 }
 
-export function requireRole(...roles: string[]) {
+export function requireRole(...roles: UserRole[]) {
   return (req: AuthRequest, res: Response, next: NextFunction) => {
     if (!req.userRole || !roles.includes(req.userRole)) {
       return res.status(403).json({ success: false, error: '权限不足' });

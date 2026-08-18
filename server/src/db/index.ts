@@ -9,45 +9,47 @@ import { fileURLToPath } from 'node:url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const dataDir = join(__dirname, '..', '..', 'data');
 const dbPath = join(dataDir, 'exam-maker.db');
+let activeDbPath: string | null = dbPath;
 
 if (!existsSync(dataDir)) {
   mkdirSync(dataDir, { recursive: true });
 }
 
-let SQL: SqlJsDatabase | null = null;
+let database: SqlJsDatabase | null = null;
 export let db: SQLJsDatabase<typeof schema>;
 export let rawDb: SqlJsDatabase;
 
 function saveToDisk() {
-  if (SQL) {
-    const buffer = SQL.export();
-    writeFileSync(dbPath, Buffer.from(buffer));
+  if (database && activeDbPath) {
+    const buffer = database.export();
+    writeFileSync(activeDbPath, Buffer.from(buffer));
   }
 }
 
-// Auto-save every 30 seconds
-setInterval(saveToDisk, 30000);
+// Auto-save every 30 seconds without keeping short-lived scripts/tests alive.
+const autoSaveTimer = setInterval(saveToDisk, 30000);
+autoSaveTimer.unref();
 
 // Save on process exit
 process.on('exit', saveToDisk);
 process.on('SIGINT', () => { saveToDisk(); process.exit(); });
 process.on('SIGTERM', () => { saveToDisk(); process.exit(); });
 
-export async function initDb(): Promise<void> {
-  const initSqlJsLib = initSqlJs as unknown as () => Promise<typeof initSqlJs>;
-  const sqlJs = await initSqlJsLib();
+export async function initDb(options?: { filePath?: string | null }): Promise<void> {
+  const sqlJs = await initSqlJs();
+  activeDbPath = options && 'filePath' in options ? options.filePath ?? null : dbPath;
 
-  if (existsSync(dbPath)) {
-    const buffer = readFileSync(dbPath);
-    SQL = new sqlJs.Database(buffer);
+  if (activeDbPath && existsSync(activeDbPath)) {
+    const buffer = readFileSync(activeDbPath);
+    database = new sqlJs.Database(buffer);
   } else {
-    SQL = new sqlJs.Database();
+    database = new sqlJs.Database();
   }
 
-  SQL.run('PRAGMA foreign_keys = ON');
+  database.run('PRAGMA foreign_keys = ON');
 
-  rawDb = SQL;
-  db = drizzle(SQL, { schema });
+  rawDb = database;
+  db = drizzle(database, { schema });
 }
 
 export { saveToDisk };

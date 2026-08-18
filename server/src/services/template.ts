@@ -2,9 +2,13 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { db, schema, saveToDisk } from '../db/index.js';
 import { addEvent } from '../controllers/project.js';
-import { isConfigured, sendMessage } from './ai.js';
+import { isConfigured } from './ai.js';
 import { getProjectDir } from './workflow.js';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
+import { runStructuredPrompt } from './promptRunner.js';
+import { questionParsingPrompt } from '../prompts/questionParsingPrompt.js';
+import { templateExtractionPrompt } from '../prompts/templateExtractionPrompt.js';
+import { independentValidationPrompt } from '../prompts/independentValidationPrompt.js';
 
 // ====== Types ======
 export interface TemplateSection {
@@ -32,8 +36,10 @@ export async function analyzeTemplate(
   course: string
 ): Promise<TemplateResult> {
   const texFiles = db.select().from(schema.projectFiles)
-    .where(eq(schema.projectFiles.projectId, projectId))
-    .where(eq(schema.projectFiles.type, 'source_tex'))
+    .where(and(
+      eq(schema.projectFiles.projectId, projectId),
+      eq(schema.projectFiles.type, 'source_tex'),
+    ))
     .all();
 
   if (texFiles.length === 0) {
@@ -56,66 +62,56 @@ async function aiExtractTemplate(
 ): Promise<TemplateResult> {
   addEvent(projectId, 'step-3', 'log', '🤖 使用 AI 提取试卷结构...');
 
-  const texSamples = texFiles.map(f => {
-    try { return readFileSync(f.filepath, 'utf-8').slice(0, 5000); }
-    catch { return ''; }
-  }).join('\n\n---\n\n');
-
-  const prompt = `请分析以下《${course}》真题 LaTeX，提取**试卷结构模板**。
-
-## 分析任务
-1. 识别所有大题（一、二、三...）及其题型（选择题/填空题/计算题/证明题/简答题...）
-2. 统计每种题型的题量
-3. 提取每题分值标注（\\score{n}）
-4. 计算单题分值与各题型小计
-5. 识别总分与考试时长（如有标注）
-6. 记录试卷抬头风格（课程名格式、考试说明文字、评分说明格式）
-
-## 输出格式（JSON，只输出JSON不要解释）
-{
-  "totalScore": 100,
-  "duration": 120,
-  "sections": [
-    {"type": "选择题", "count": 5, "pointsPerQuestion": 4, "subtotal": 20},
-    {"type": "填空题", "count": 4, "pointsPerQuestion": 4, "subtotal": 16},
-    {"type": "计算题", "count": 2, "pointsPerQuestion": 12, "subtotal": 24},
-    {"type": "证明题", "count": 1, "pointsPerQuestion": 12, "subtotal": 40}
-  ],
-  "headerStyle": "\\section*{课程名 学期 试卷类型}\\n\\textbf{考试说明：}...\\n总分XXX分，考试时间XXX分钟。"
-}
-
-## 分值核对规则
-- 各 section.subtotal = count × pointsPerQuestion
-- 所有 section.subtotal 之和必须 = totalScore
-- 如果 \\score{} 标注值与 section 声明的分值不一致，以 \\score{} 为准，并标注差异
-
-## 真题内容
-${texSamples}`;
+  const parsedQuestions: Array<{
+    sourceExamId: number; questionNo: string; questionType: string; score: number | null;
+    sectionTitle: string | null; evidence: Array<{ sourceDocumentId: number; pageNumber: number | null; blockId: string | null; quote: string }>;
+  }> = [];
 
   try {
-    const response = await sendMessage(
-      '你是试卷结构分析员。严格按JSON格式输出，不做解释。分值必须自洽。',
-      [{ role: 'user', content: prompt }],
-      { maxTokens: 3000 }
-    );
+    const renderingEvidence: Array<{ sourceExamId: number; text: string; evidence: never[] }> = [];
+    for (const file of texFiles) {
+      const text = readFileSync(file.filepath, 'utf-8');
+      const parsedRun = await runStructuredPrompt(questionParsingPrompt, {
+        sourceExamId: file.id, sourceDocumentId: file.id,
+        questionSections: [{ id: 'legacy-source', pageStart: 1, pageEnd: 1 }],
+        pages: [{ pageNumber: 1, text, blockIds: [] }],
+      }, { maxTokens: 8000 });
+      for (const question of parsedRun.output.questions) {
+        parsedQuestions.push({
+          sourceExamId: file.id, questionNo: question.originalQuestionNo,
+          questionType: question.questionType, score: question.originalScore,
+          sectionTitle: null, evidence: question.evidence,
+        });
+      }
+      renderingEvidence.push({ sourceExamId: file.id, text, evidence: [] });
+    }
+    if (parsedQuestions.length === 0) throw new Error('question_parsing_prompt 未产生可用题目');
 
-    const parsed = parseJson<{
-      totalScore?: number; duration?: number;
-      sections?: Array<{ type: string; count: number; pointsPerQuestion: number; subtotal: number }>;
-    }>(response);
+    const project = db.select().from(schema.projects).where(eq(schema.projects.id, projectId)).get();
+    const extractedRun = await runStructuredPrompt(templateExtractionPrompt, {
+      course: { id: project?.courseId ?? projectId, name: course },
+      sourceExams: texFiles.map(file => ({ id: file.id, title: file.filename, durationMinutes: null, instructions: [] })),
+      questions: parsedQuestions,
+      renderingEvidence,
+    }, { maxTokens: 5000 });
+    const parsed = extractedRun.output;
+    if (parsed.status !== 'ok' || parsed.assessmentTemplate.totalScore === null ||
+        parsed.assessmentTemplate.durationMinutes === null || parsed.assessmentTemplate.sections.length === 0) {
+      throw new Error(`template_extraction_prompt 证据不足: ${parsed.issues.map(issue => issue.code).join(',')}`);
+    }
 
     const result: TemplateResult = {
       course,
-      totalScore: parsed.totalScore || 100,
-      duration: parsed.duration || 120,
-      sections: (parsed.sections || []).map((s, i) => ({
+      totalScore: parsed.assessmentTemplate.totalScore,
+      duration: parsed.assessmentTemplate.durationMinutes,
+      sections: parsed.assessmentTemplate.sections.map((s, i) => ({
         index: i + 1,
-        type: s.type || '未知',
-        count: s.count || 0,
-        pointsPerQuestion: s.pointsPerQuestion || 0,
-        subtotal: s.subtotal || (s.count * s.pointsPerQuestion),
+        type: s.questionType,
+        count: s.questionCount,
+        pointsPerQuestion: s.scorePerQuestion ?? s.subtotal / s.questionCount,
+        subtotal: s.subtotal,
       })),
-      headerStyle: '',
+      headerStyle: JSON.stringify(parsed.renderingTemplate),
       verified: false,
       verifyNotes: [],
       sourceFiles: texFiles.map(f => f.filename),
@@ -131,8 +127,61 @@ ${texSamples}`;
   } catch (err) {
     addEvent(projectId, 'step-3', 'error',
       `AI 模板提取失败: ${err instanceof Error ? err.message : 'Unknown'}`);
+    if (parsedQuestions.length > 0) {
+      const fallback = buildTargetTemplateFromQuestions(course, parsedQuestions, texFiles.map(f => f.filename));
+      addEvent(projectId, 'step-3', 'log',
+        `🔧 原卷分值证据不足，已按 ${fallback.sections.reduce((sum, section) => sum + section.count, 0)} 道已解析题目建立可编辑目标模板`);
+      return fallback;
+    }
     return heuristicExtractTemplate(projectId, course, texFiles);
   }
+}
+
+export function buildTargetTemplateFromQuestions(
+  course: string,
+  questions: Array<{ questionType: string; score: number | null }>,
+  sourceFiles: string[],
+): TemplateResult {
+  if (questions.length === 0) return buildFallbackTemplate(course);
+
+  const hasCompleteScores = questions.every(question =>
+    typeof question.score === 'number' && Number.isFinite(question.score) && question.score > 0);
+  const targetTotal = hasCompleteScores
+    ? questions.reduce((sum, question) => sum + (question.score ?? 0), 0)
+    : 100;
+
+  const allocatedScores = hasCompleteScores
+    ? questions.map(question => question.score as number)
+    : questions.map((_, index) => {
+        const base = Math.floor(targetTotal / questions.length);
+        return base + (index < targetTotal % questions.length ? 1 : 0);
+      });
+
+  const sections: TemplateSection[] = [];
+  for (let index = 0; index < questions.length; index++) {
+    const type = questions[index].questionType || 'subjective';
+    const score = allocatedScores[index];
+    const previous = sections.at(-1);
+    if (previous && previous.type === type && previous.pointsPerQuestion === score) {
+      previous.count += 1;
+      previous.subtotal += score;
+      continue;
+    }
+    sections.push({ index: sections.length + 1, type, count: 1, pointsPerQuestion: score, subtotal: score });
+  }
+
+  return {
+    course,
+    totalScore: targetTotal,
+    duration: 120,
+    sections,
+    headerStyle: '',
+    verified: hasCompleteScores,
+    verifyNotes: hasCompleteScores
+      ? []
+      : ['历史材料未提供可靠分值；当前 100 分结构是可编辑的目标模板，不代表原卷分值。'],
+    sourceFiles,
+  };
 }
 
 function heuristicExtractTemplate(
@@ -223,7 +272,24 @@ function heuristicExtractTemplate(
   }
 
   // Ensure totalScore is 100 if no scores found
-  if (result.totalScore === 0) result.totalScore = 100;
+  if (result.totalScore === 0) {
+    const questionMatches = texFiles.flatMap(file => {
+      try {
+        const text = readFileSync(file.filepath, 'utf-8');
+        return [...text.matchAll(/(?:^|\n)\s*(?:题目\s*)?(\d{1,3})[.、．)）\s]/gm)].map(match => ({
+          questionType: /证明/.test(match[0] + text.slice(match.index ?? 0, (match.index ?? 0) + 120)) ? 'proof' : 'subjective',
+          score: null,
+        }));
+      } catch {
+        return [];
+      }
+    });
+    if (questionMatches.length > 0) {
+      return buildTargetTemplateFromQuestions(course, questionMatches, texFiles.map(file => file.filename));
+    }
+    result.totalScore = 100;
+    result.verifyNotes.push('未识别到题型或题量，不能直接用于生成；需要教师补充模板。');
+  }
 
   return result;
 }
@@ -256,39 +322,19 @@ async function verifyTemplate(
   // AI verification if available
   if (isConfigured() && texFiles.length > 0) {
     try {
-      const texSample = texFiles.map(f => {
-        try { return readFileSync(f.filepath, 'utf-8').slice(0, 3000); }
-        catch { return ''; }
-      }).join('\n\n---\n\n');
+      const validation = await runStructuredPrompt(independentValidationPrompt, {
+        scope: 'template',
+        canonicalObject: { totalScore: result.totalScore, duration: result.duration, sections: result.sections },
+        constraints: { sourceFiles: result.sourceFiles }, deterministicFindings: [],
+        sourceEvidence: texFiles.map(file => ({ sourceDocumentId: file.id, pageNumber: null, blockId: null, quote: readFileSync(file.filepath, 'utf-8') })),
+      }, { maxTokens: 3000 });
 
-      const verifyPrompt = `独立核对以下试卷模板是否与真题一致。
-
-## 提取的模板
-${JSON.stringify({ totalScore: result.totalScore, duration: result.duration, sections: result.sections }, null, 2)}
-
-## 真题原文
-${texSample.slice(0, 3000)}
-
-## 核对清单（逐条回复 PASS 或 FAIL+具体差异）
-1. 题型序列是否与真题一致？
-2. 各题型题量是否正确？
-3. 各题分值是否正确？
-4. 总分合计是否一致？
-5. 时长标注是否正确？
-
-最后一行输出 VERDICT: PASS 或 VERDICT: FAIL`;
-
-      const response = await sendMessage(
-        '你是试卷结构核对员。逐项比对，严格审查。',
-        [{ role: 'user', content: verifyPrompt }],
-        { maxTokens: 2000 }
-      );
-
-      if (response.includes('VERDICT: PASS')) {
+      if (validation.output.status === 'ok' && validation.output.passed) {
         result.verifyNotes.push('核对子代理: PASS');
         return true;
       } else {
-        result.verifyNotes.push('核对子代理: FAIL - ' + response.slice(0, 200));
+        result.verifyNotes.push(...validation.output.findings.map(finding => `${finding.severity}: ${finding.message}`));
+        result.verifyNotes.push(...validation.output.issues.map(issue => `uncertain: ${issue.message}`));
         return false;
       }
     } catch {
@@ -320,8 +366,10 @@ export function saveTemplateOutputs(projectId: number, result: TemplateResult): 
     { filepath: mdPath, filename: 'template.md' },
   ]) {
     const existing = db.select().from(schema.projectFiles)
-      .where(eq(schema.projectFiles.projectId, projectId))
-      .where(eq(schema.projectFiles.filename, filename))
+      .where(and(
+        eq(schema.projectFiles.projectId, projectId),
+        eq(schema.projectFiles.filename, filename),
+      ))
       .get();
 
     if (existing) {

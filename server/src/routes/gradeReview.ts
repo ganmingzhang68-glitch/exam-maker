@@ -1,0 +1,2 @@
+import { Router } from 'express'; import { requireAuth, requireRole } from '../middleware/auth.js'; import { create, mine, resolve, teacherList } from '../controllers/gradeReview.js';
+const router = Router(); router.post('/', requireAuth, requireRole('student'), create); router.get('/mine', requireAuth, requireRole('student'), mine); router.get('/', requireAuth, requireRole('teacher', 'admin'), teacherList); router.patch('/:id/resolve', requireAuth, requireRole('teacher', 'admin'), resolve); export default router;

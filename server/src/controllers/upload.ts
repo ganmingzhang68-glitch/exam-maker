@@ -4,9 +4,10 @@ import { eq } from 'drizzle-orm';
 import { db, schema, saveToDisk } from '../db/index.js';
 import { AppError } from '../middleware/errorHandler.js';
 import type { AuthRequest } from '../middleware/auth.js';
-import { getProjectDir, addEvent } from './project.js';
-import { existsSync, mkdirSync } from 'node:fs';
-import { join, extname } from 'node:path';
+import { addEvent } from './project.js';
+import { getProjectDir } from '../services/workflow.js';
+import { closeSync, existsSync, mkdirSync, openSync, readSync, unlinkSync } from 'node:fs';
+import { join, extname, resolve, sep } from 'node:path';
 
 // Configure multer for past paper uploads
 const storage = multer.diskStorage({
@@ -18,10 +19,14 @@ const storage = multer.diskStorage({
     cb(null, dir);
   },
   filename: (_req, file, cb) => {
-    // Keep original filename, add timestamp to avoid conflicts
+    // Keep original filename, add timestamp to avoid conflicts.
+    // Sanitize to ASCII-safe to avoid Windows unicode path issues.
     const ext = extname(file.originalname);
     const base = file.originalname.slice(0, -ext.length);
-    cb(null, `${base}_${Date.now()}${ext}`);
+    // Replace non-ASCII chars with a safe token, keep extension
+    const safeBase = base.replace(/[^\x20-\x7E]/g, '_').replace(/[\\/:*?"<>|]/g, '_');
+    const safeName = safeBase.length > 0 ? safeBase : `paper_${Date.now()}`;
+    cb(null, `${safeName}_${Date.now()}${ext.toLowerCase()}`);
   },
 });
 
@@ -49,6 +54,26 @@ const upload = multer({
 
 export const uploadPastPapers = upload.array('files', 20); // max 20 files
 
+export function authorizeProjectUpload(req: AuthRequest, _res: Response, next: NextFunction) {
+  try {
+    const projectId = Number(req.params.id);
+    if (!Number.isInteger(projectId) || projectId <= 0) throw new AppError(400, '项目 ID 无效');
+    const project = db.select().from(schema.projects).where(eq(schema.projects.id, projectId)).get();
+    if (!project || (req.userRole !== 'admin' && project.userId !== req.userId)) throw new AppError(403, '无权上传到该项目');
+    next();
+  } catch (error) { next(error); }
+}
+
+function hasValidSignature(file: Express.Multer.File): boolean {
+  const extension = extname(file.originalname).toLowerCase(); const descriptor = openSync(file.path, 'r'); const bytes = Buffer.alloc(4096);
+  let length = 0; try { length = readSync(descriptor, bytes, 0, bytes.length, 0); } finally { closeSync(descriptor); }
+  const head = bytes.subarray(0, length);
+  if (extension === '.pdf') return head.subarray(0, 5).toString() === '%PDF-';
+  if (extension === '.docx') return head[0] === 0x50 && head[1] === 0x4b;
+  if (extension === '.doc') return head.subarray(0, 8).equals(Buffer.from([0xd0,0xcf,0x11,0xe0,0xa1,0xb1,0x1a,0xe1]));
+  return !head.includes(0);
+}
+
 export async function handleUpload(req: AuthRequest, res: Response, next: NextFunction) {
   try {
     const projectId = Number(req.params.id);
@@ -60,6 +85,12 @@ export async function handleUpload(req: AuthRequest, res: Response, next: NextFu
 
     const files = req.files as Express.Multer.File[];
     if (!files || files.length === 0) throw new AppError(400, '请选择文件');
+    const projectRoot = `${resolve(getProjectDir(projectId), 'past_papers')}${sep}`;
+    const invalid = files.find(file => !resolve(file.path).startsWith(projectRoot) || !hasValidSignature(file));
+    if (invalid) {
+      files.forEach(file => { const path = resolve(file.path); if (path.startsWith(projectRoot) && existsSync(path)) unlinkSync(path); });
+      throw new AppError(400, `文件内容与格式不匹配：${invalid.originalname}`);
+    }
 
     const results = [];
     for (const file of files) {

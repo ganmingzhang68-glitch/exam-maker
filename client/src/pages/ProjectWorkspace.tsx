@@ -15,6 +15,21 @@ import type { ProjectDetail, JobEvent, Checkpoint } from '@exam-maker/shared';
 
 const { Title, Text, Paragraph } = Typography;
 
+// Build an authenticated download URL (EventSource/<a> can't set headers, so pass token as query param)
+function downloadUrl(projectId: number, fileId: number): string {
+  const token = localStorage.getItem('token');
+  return `/api/projects/${projectId}/download/${fileId}?token=${encodeURIComponent(token || '')}`;
+}
+
+function triggerDownload(url: string, filename: string) {
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}
+
 const stepItems = [
   { title: '参数配置', description: '设定课程/难度/套数' },
   { title: '真题解析', description: '转写 LaTeX + 校对' },
@@ -95,8 +110,11 @@ const ProjectWorkspace: React.FC = () => {
 
     eventSource.onmessage = (event) => {
       try {
-        const evt = JSON.parse(event.data);
-        setEvents((prev) => [...prev.slice(-200), evt]);
+        const evt = JSON.parse(event.data) as JobEvent;
+        setEvents((prev) => {
+          const withoutDuplicate = prev.filter(existing => existing.id !== evt.id);
+          return [...withoutDuplicate, evt].slice(-200);
+        });
         if (evt.eventType === 'done' || evt.eventType === 'error') {
           loadProject();
         }
@@ -149,7 +167,7 @@ const ProjectWorkspace: React.FC = () => {
             loading={actionLoading === step}
             onClick={() => handleCheckpoint(step, 'approve')}
           >
-            确认{label}
+            使用当前{label}继续
           </Button>
           <Button
             danger size="small" icon={<CloseCircleOutlined />}
@@ -184,17 +202,20 @@ const ProjectWorkspace: React.FC = () => {
           <Tag color="blue">{project.course}</Tag>
         </Space>
         <Space>
-          {(project.status === 'drafting') && (
+          {(['drafting', 'parsing'].includes(project.status)) && (
             <Button type="primary" icon={<PlayCircleOutlined />}
+              loading={actionLoading === 'start'}
               onClick={async () => {
+                setActionLoading('start');
                 try {
                   await startWorkflow(projectId);
-                  message.success('工作流已启动');
-                  loadProject();
+                  message.success(project.status === 'parsing' ? '已开始解析真题并出卷' : '工作流已启动');
+                  await loadProject();
                 } catch { message.error('启动失败'); }
+                finally { setActionLoading(null); }
               }}
             >
-              开始出卷
+              {project.status === 'parsing' ? '开始解析并出卷' : '开始出卷'}
             </Button>
           )}
           {(project.status === 'error') && (
@@ -247,7 +268,7 @@ const ProjectWorkspace: React.FC = () => {
               type="warning"
               showIcon
               message="需要您的确认"
-              description="请检查上面的中间产物，确认无误后点击「确认」继续流程。如有问题请点击「驳回」并附注修改意见。"
+              description="流程已暂停。请检查细目表或试卷模板；无需修改时点击「使用当前配置继续」，系统才会进入下一阶段。如有问题请点击「驳回」。"
             />
           )}
           {project.status === 'error' && (
@@ -270,10 +291,7 @@ const ProjectWorkspace: React.FC = () => {
                     // Download blueprint.md
                     const bpFile = project.files?.find(f => f.filename === 'blueprint.md');
                     if (bpFile) {
-                      const link = document.createElement('a');
-                      link.href = `/api/projects/${projectId}/download/${bpFile.id}`;
-                      link.download = 'blueprint.md';
-                      document.body.appendChild(link); link.click(); document.body.removeChild(link);
+                      triggerDownload(downloadUrl(projectId, bpFile.id), 'blueprint.md');
                     }
                   }}
                 >下载 Markdown</Button>
@@ -286,14 +304,18 @@ const ProjectWorkspace: React.FC = () => {
                   <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
                     {blueprint.entries.length > 0 && (() => {
                       const totalPoints = blueprint.entries.reduce((s: number, e) => s + e.points, 0);
-                      const basicPoints = blueprint.entries.filter(e => e.difficulty === '基础').reduce((s: number, e) => s + e.points, 0);
-                      const mediumPoints = blueprint.entries.filter(e => e.difficulty === '中等').reduce((s: number, e) => s + e.points, 0);
-                      const hardPoints = blueprint.entries.filter(e => e.difficulty === '难').reduce((s: number, e) => s + e.points, 0);
+                      // Source papers may omit scores. In that case show the distribution by
+                      // question count instead of dividing zero source points and rendering NaN.
+                      const weight = (entry: BlueprintResponse['entries'][number]) => totalPoints > 0 ? entry.points : 1;
+                      const totalWeight = blueprint.entries.reduce((s, entry) => s + weight(entry), 0);
+                      const basicPoints = blueprint.entries.filter(e => e.difficulty === '基础').reduce((s, e) => s + weight(e), 0);
+                      const mediumPoints = blueprint.entries.filter(e => e.difficulty === '中等').reduce((s, e) => s + weight(e), 0);
+                      const hardPoints = blueprint.entries.filter(e => e.difficulty === '难').reduce((s, e) => s + weight(e), 0);
                       type DiffItem = { label: string; pct: number; color: string };
                       const items: DiffItem[] = [
-                        { label: '基础', pct: Math.round(basicPoints / totalPoints * 100), color: '#52c41a' },
-                        { label: '中等', pct: Math.round(mediumPoints / totalPoints * 100), color: '#faad14' },
-                        { label: '难', pct: Math.round(hardPoints / totalPoints * 100), color: '#f5222d' },
+                        { label: '基础', pct: Math.round(basicPoints / totalWeight * 100), color: '#52c41a' },
+                        { label: '中等', pct: Math.round(mediumPoints / totalWeight * 100), color: '#faad14' },
+                        { label: '难', pct: Math.round(hardPoints / totalWeight * 100), color: '#f5222d' },
                       ];
                       return items.map(d => (
                         <div key={d.label} style={{
@@ -473,18 +495,67 @@ const ProjectWorkspace: React.FC = () => {
                       </Text>
                     </Space>
                     <Button type="link" size="small" icon={<DownloadOutlined />}
-                      onClick={() => {
-                        const link = document.createElement('a');
-                        link.href = `/api/projects/${projectId}/download/${file.id}`;
-                        link.download = file.filename;
-                        document.body.appendChild(link); link.click(); document.body.removeChild(link);
-                      }}>
+                      onClick={() => triggerDownload(downloadUrl(projectId, file.id), file.filename)}>
                       下载
                     </Button>
                   </div>
                 ))}
               </div>
             </Card>
+            );
+          })()}
+
+          {/* Teacher delivery artifacts */}
+          {project.files && project.files.some(f =>
+            ['student_paper', 'answer_key', 'rubric'].includes(f.type) ||
+            (f.type === 'final_output' && ['question_paper', 'answer_key', 'rubric'].includes(String(f.metadata?.artifactType)))
+          ) && (() => {
+            const artifacts = project.files
+              .filter(f =>
+                ['student_paper', 'answer_key', 'rubric'].includes(f.type) ||
+                (f.type === 'final_output' && ['question_paper', 'answer_key', 'rubric'].includes(String(f.metadata?.artifactType)))
+              )
+              .sort((a, b) => a.filename.localeCompare(b.filename));
+            const labels: Record<string, string> = {
+              student_paper: '学生卷', question_paper: '学生卷', answer_key: '教师参考答案', rubric: '逐项评分标准',
+            };
+            return (
+              <Card size="small" title="📦 教师交付制品">
+                <List
+                  size="small"
+                  dataSource={artifacts}
+                  renderItem={(file) => (
+                    <List.Item actions={[
+                      <Button key="download" type="link" size="small" icon={<DownloadOutlined />}
+                        onClick={() => {
+                          const token = localStorage.getItem('token');
+                          const link = document.createElement('a');
+                          link.href = `/api/projects/${projectId}/download/${file.id}?token=${encodeURIComponent(token || '')}`;
+                          link.download = file.filename;
+                          document.body.appendChild(link);
+                          link.click();
+                          document.body.removeChild(link);
+                        }}>
+                        下载
+                      </Button>,
+                    ]}>
+                      <List.Item.Meta
+                        avatar={<FileTextOutlined />}
+                        title={file.filename}
+                        description={(() => {
+                          const artifactType = file.type === 'final_output' ? String(file.metadata?.artifactType) : file.type;
+                          return <Space>
+                            <Tag color={artifactType === 'question_paper' || artifactType === 'student_paper' ? 'blue' : 'purple'}>
+                              {labels[artifactType] || artifactType}
+                            </Tag>
+                            <Tag>{String(file.metadata?.format || file.filename.split('.').pop() || '').toUpperCase()}</Tag>
+                          </Space>;
+                        })()}
+                      />
+                    </List.Item>
+                  )}
+                />
+              </Card>
             );
           })()}
 
@@ -500,16 +571,7 @@ const ProjectWorkspace: React.FC = () => {
                       <Button
                         key="download" type="link" size="small"
                         icon={<DownloadOutlined />}
-                        onClick={() => {
-                          const token = localStorage.getItem('token');
-                          // Direct download with auth
-                          const link = document.createElement('a');
-                          link.href = `/api/projects/${projectId}/download/${file.id}`;
-                          link.download = file.filename;
-                          document.body.appendChild(link);
-                          link.click();
-                          document.body.removeChild(link);
-                        }}
+                        onClick={() => triggerDownload(downloadUrl(projectId, file.id), file.filename)}
                       >
                         下载
                       </Button>,
