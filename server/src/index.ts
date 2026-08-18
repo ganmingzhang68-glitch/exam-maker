@@ -2,7 +2,7 @@ import dotenv from 'dotenv';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
-dotenv.config({ path: join(__dirname, '..', '..', '.env'), override: true });
+dotenv.config({ path: join(__dirname, '..', '..', '.env'), override: false });
 import express from 'express';
 import cors from 'cors';
 import morgan from 'morgan';
@@ -32,12 +32,17 @@ import gradeReviewRoutes from './routes/gradeReview.js';
 import adminRoutes from './routes/admin.js';
 import organizationRoutes from './routes/organization.js';
 import { organizationMiddleware } from './middleware/organization.js';
+import { isCorsOriginAllowed, readRuntimeConfig, validateRuntimeConfig } from './config/runtime.js';
 
 const app = express();
-const PORT = process.env.PORT || 3001;
+const runtimeConfig = readRuntimeConfig();
 
 // Global middleware
-app.use(cors({ origin: 'http://localhost:5173', credentials: true }));
+if (runtimeConfig.trustProxy) app.set('trust proxy', 1);
+app.use(cors({
+  origin: (origin, callback) => callback(null, isCorsOriginAllowed(origin, runtimeConfig)),
+  credentials: true,
+}));
 morgan.token('safe-url', (req) => (req.url ?? '').replace(/([?&]token=)[^&]*/g, '$1[REDACTED]'));
 app.use(morgan(':method :safe-url :status :response-time ms - :res[content-length]'));
 app.use(express.json());
@@ -74,14 +79,15 @@ app.use('/api/organizations', organizationRoutes);
 app.use(errorHandler);
 
 async function start() {
+  validateRuntimeConfig(runtimeConfig);
   await initDb();
   runMigrations();
   resumeSimilarQuestionJobs();
   resumeAiGradingSuggestions();
 
-  app.listen(PORT, () => {
-    console.log(`🚀 Server running at http://localhost:${PORT}`);
-    console.log(`📋 Health check: http://localhost:${PORT}/api/health`);
+  app.listen(runtimeConfig.port, runtimeConfig.host, () => {
+    console.log(`🚀 Server running at http://${runtimeConfig.host}:${runtimeConfig.port}`);
+    console.log(`📋 Health check: http://${runtimeConfig.host}:${runtimeConfig.port}/api/health`);
   });
 }
 

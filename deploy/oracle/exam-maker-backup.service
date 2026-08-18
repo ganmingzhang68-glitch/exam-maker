@@ -1,0 +1,10 @@
+[Unit]
+Description=Consistent backup of Exam Maker data
+After=local-fs.target
+
+[Service]
+Type=oneshot
+ExecStart=__APP_ROOT__/deploy/oracle/backup.sh
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
