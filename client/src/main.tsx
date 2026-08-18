@@ -6,16 +6,26 @@ import zhCN from 'antd/locale/zh_CN';
 import App from './App';
 import './App.css';
 
+const antdTheme = {
+  token: {
+    colorPrimary: '#1677ff',
+    borderRadius: 6,
+  },
+};
+
+// Static message/modal instances render outside the application tree. Give
+// those holders the same locale and theme so they do not lose context.
+ConfigProvider.config({
+  holderRender: (children) => (
+    <ConfigProvider locale={zhCN} theme={antdTheme}>{children}</ConfigProvider>
+  ),
+});
+
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <ConfigProvider
       locale={zhCN}
-      theme={{
-        token: {
-          colorPrimary: '#1677ff',
-          borderRadius: 6,
-        },
-      }}
+      theme={antdTheme}
     >
       <BrowserRouter>
         <App />

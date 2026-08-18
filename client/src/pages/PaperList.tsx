@@ -147,7 +147,7 @@ const PaperList: React.FC = () => {
         onCancel={() => setModalOpen(false)}
         onOk={() => form.submit()}
         confirmLoading={creating}
-        destroyOnClose
+        destroyOnHidden
       >
         <Form<PaperFormValues>
           form={form}

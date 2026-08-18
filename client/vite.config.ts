@@ -6,8 +6,8 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, 'src'),
-      '@exam-maker/shared': path.resolve(__dirname, '../shared/index.ts'),
+      '@': path.resolve(import.meta.dirname, 'src'),
+      '@exam-maker/shared': path.resolve(import.meta.dirname, '../shared/index.ts'),
     },
   },
   server: {
