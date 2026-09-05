@@ -1,0 +1,13 @@
+name:CI
+on: [push,pull_requst]
+
+jobs:
+  hello:
+    runs-on: ubuntu-latest
+    steps:
+      - users: actions/checkout@v4
+      - run: echo "仓库已经拉下来了"
+      - run: ls -la
+      - run: python -c "print('hello CI')"
+
+
